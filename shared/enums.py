@@ -1,0 +1,40 @@
+"""Shared status values for the Smart E-Mobility Hub MVP.
+
+Keep these values canonical. A SUB must not create a second spelling for a
+status owned by another module.
+"""
+
+# Roles
+ROLE_STUDENT = "Student"
+ROLE_PRIVATE_EV_STUDENT = "Private EV Student"
+ROLE_OPERATOR = "Operator"
+
+# Shared vehicle lifecycle (SUB-02 owns transitions)
+VEHICLE_AVAILABLE = "AVAILABLE"
+VEHICLE_IN_USE = "IN_USE"
+VEHICLE_CHARGING = "CHARGING"
+VEHICLE_UNAVAILABLE = "UNAVAILABLE"
+
+# Shared vehicle reservation lifecycle (SUB-01 owns transitions)
+RESERVATION_PENDING = "PENDING"
+RESERVATION_CANCELLED = "CANCELLED"
+RESERVATION_EXPIRED = "EXPIRED"
+RESERVATION_CONSUMED = "CONSUMED"
+
+# Private parking (SUB-03 owns transitions)
+PARKING_AVAILABLE = "AVAILABLE"
+PARKING_RESERVED = "RESERVED"
+PARKING_IN_USE = "IN_USE"
+PARKING_UNAVAILABLE = "UNAVAILABLE"
+
+# Charging resources (SUB-04 owns transitions)
+CHARGING_POINT_AVAILABLE = "AVAILABLE"
+CHARGING_POINT_RESERVED = "RESERVED"
+CHARGING_POINT_IN_USE = "IN_USE"
+CHARGING_POINT_UNAVAILABLE = "UNAVAILABLE"
+
+# Private EV charging requests (SUB-03 owns request state)
+CHARGING_REQUEST_PENDING = "PENDING"
+CHARGING_REQUEST_CONFIRMED = "CONFIRMED"
+CHARGING_REQUEST_CANCELLED = "CANCELLED"
+CHARGING_REQUEST_REJECTED = "REJECTED"
