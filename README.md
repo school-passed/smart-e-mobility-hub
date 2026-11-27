@@ -18,16 +18,56 @@ The assignment brief permits hard-coded data and does not require a backend data
 
 `shared/auth.py` currently provides a temporary role selector for development. M2 is responsible for replacing it with the agreed Sign Up / Sign In / Sign Out demo flows.
 
-## Setup on Windows PowerShell
+## Run the demo on Windows PowerShell
+
+Open PowerShell in the project directory. If the project already has a `.venv`
+folder, run Streamlit through that environment's Python executable:
+
+```powershell
+Set-Location D:\MinhHuy\CNPM\smart-e-mobility-hub
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+This command does not require activating the virtual environment or adding the
+`streamlit` command to the global PATH. In the current local setup, `.venv`
+contains Python 3.10.11 and Streamlit 1.65.0. The project specification calls
+for Python 3.11; use the setup below when creating a fresh team environment.
+
+When Streamlit starts, choose **Operator** in the sidebar and open
+**SUB-06 · What-if Simulation**. Select a scenario, Hub and time window, set
+the assumptions, then capture the snapshot and run the simulation.
+
+### Create a fresh Python 3.11 environment
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run app.py
+python -m pip install --no-cache-dir -r requirements.txt
+python -m streamlit run app.py
 ```
 
 Open the local URL printed by Streamlit in the terminal.
+
+Keep `.venv` inside the project folder so the dependencies stay with the
+checkout. If the project is on D:, this also keeps the installed packages off
+the nearly full C: drive.
+
+## SUB-06 What-if Simulation demo
+
+Run the same application command above, choose the **Operator** demo role, then
+open **SUB-06 · What-if Simulation** from the sidebar. The demo currently
+supports three agreed scenarios:
+
+- Metro Hub demand surge
+- Hub near capacity or vehicle shortage
+- Charging demand surge or charging point failure
+
+The Operator selects a Hub and time window, confirms a copied network snapshot,
+and runs the scenario. Demand values that are not part of the shared seed data
+are entered as explicit scenario assumptions. Results compare before/after
+metrics and offer suggestions; they never execute dispatch or change live
+operational records. Two additional scenario choices from UC-15 remain to be
+confirmed by the team before implementation.
 
 ## Initial demo data
 
@@ -71,4 +111,5 @@ modules/
 - Shared demo data: created
 - Temporary role selector: created
 - SUB-01 Hub discovery, vehicle search and reservation foundation: implemented
-- SUB-02 through SUB-06: starter placeholders awaiting their owners
+- SUB-02 through SUB-05: starter placeholders awaiting their owners
+- SUB-06: three-scenario What-if Simulation demo implemented; additional UC-15 scenarios pending team confirmation
