@@ -24,7 +24,7 @@ def render(state: dict, current_user: dict) -> None:
     hub_map = {h["hub_id"]: f"{h['hub_id']} · {h['name']}" for h in state["hubs"]}
 
     tab_pickup, tab_return, tab_history = st.tabs(
-        ["UC-04 · Nhận xe (Pickup)", "UC-05 · Trả xe (Return)", "Lịch sử chuyến đi"]
+        ["Nhận xe (Pickup)", "Trả xe (Return)", "Lịch sử chuyến đi"]
     )
 
     # ------------------------------------------------------------------
@@ -36,7 +36,7 @@ def render(state: dict, current_user: dict) -> None:
             st.warning(
                 f"Bạn đang có chuyến đi **{active_trip['trip_id']}** với xe "
                 f"**{active_trip['vehicle_id']}** (bắt đầu lúc `{active_trip['start_time']}`). "
-                "Hãy chuyển sang tab **UC-05 · Trả xe** để kết thúc chuyến đi."
+                "Hãy chuyển sang tab **Trả xe** để kết thúc chuyến đi."
             )
         else:
             reservations = get_student_reservations(state, student_id)
