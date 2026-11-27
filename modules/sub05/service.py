@@ -77,7 +77,7 @@ def _refresh_reservations() -> None:
 
         expire = getattr(sub01_service, "expire_pending_reservations", None)
         if callable(expire):
-            expire()
+            expire(get_state())
     except Exception:  # never let a SUB-01 problem break SUB-05 screens
         pass
 

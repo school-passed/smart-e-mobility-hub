@@ -68,6 +68,7 @@ def get_network_snapshot(
         "parking_spaces",
         "charging_points",
         "charging_requests",
+        "shared_charging_requests",
         "charging_schedules",
     ):
         value = operational_state.get(key, [])
@@ -456,8 +457,14 @@ def _pending_reservations(snapshot: dict[str, Any], hub_id: str) -> int:
 
 
 def _pending_charging_requests(snapshot: dict[str, Any], hub_id: str) -> int:
+    """Count pending private and shared EV charging demands without duplication."""
+    records = snapshot["records"]
+    requests = [
+        *records.get("charging_requests", []),
+        *records.get("shared_charging_requests", []),
+    ]
     return sum(
-        1 for request in snapshot["records"]["charging_requests"]
+        1 for request in requests
         if request.get("hub_id") == hub_id and request.get("status") == "PENDING"
     )
 

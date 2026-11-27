@@ -19,7 +19,8 @@ from shared.state import get_state
 AUTH_USER_KEY = "auth_current_user"
 AUTH_MODE_KEY = "auth_mode"
 
-VALID_ROLES = [ROLE_STUDENT, ROLE_PRIVATE_EV_STUDENT, ROLE_OPERATOR]
+# Public registration is restricted to student roles. Operator remains a seeded demo account.
+VALID_ROLES = [ROLE_STUDENT, ROLE_PRIVATE_EV_STUDENT]
 
 _DEFAULT_USERS: list[dict[str, str]] = [
     {

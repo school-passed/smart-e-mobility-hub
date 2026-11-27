@@ -67,21 +67,18 @@ def _notify_sub05_incident(
 def _create_low_battery_charging_request(
     state: dict[str, Any], vehicle: dict[str, Any], now_iso: str
 ) -> dict[str, Any]:
-    """Create a PENDING charging request for SUB-04 when battery < 20%."""
-    req_num = state["next_charging_request_number"]
-    state["next_charging_request_number"] = req_num + 1
-    request = {
-        "request_id": f"CRQ-{req_num:04d}",
-        "vehicle_id": vehicle["vehicle_id"],
-        "hub_id": vehicle["hub_id"],
-        "battery_level": vehicle["battery_level"],
-        "target_battery": 90,
-        "origin_sub": "SUB-02",
-        "status": CHARGING_REQUEST_PENDING,
-        "created_at": now_iso,
-    }
-    state["charging_requests"].append(request)
-    return request
+    """Use SUB-04's existing shared-vehicle request contract instead of a parallel schema.
+
+    The request intentionally has no departure_time until Operator supplies it.
+    Kept ``now_iso`` in the signature for compatibility with the existing return flow.
+    """
+    from modules.sub04 import service as charging_service
+
+    return charging_service.receive_shared_vehicle_charging_need(
+        state,
+        vehicle_id=vehicle["vehicle_id"],
+        battery_level=vehicle["battery_level"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +145,7 @@ def pickup_vehicle(
             "status": "RESERVATION_NOT_PENDING",
             "message": f"Đơn đặt chỗ không ở trạng thái PENDING (hiện tại: {reservation['status']}).",
         }
-    if pickup_code is not None and pickup_code.strip() and pickup_code.strip() != reservation["pickup_code"]:
+    if not pickup_code or str(pickup_code).strip() != reservation["pickup_code"]:
         return {"ok": False, "status": "INVALID_PICKUP_CODE", "message": "Mã pickup code không khớp."}
 
     vehicle = _find_vehicle(state, vehicle_id)

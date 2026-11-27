@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from shared.auth import render_demo_role_selector
+from shared.auth import render_auth
 from shared.state import get_state
 from modules.sub01.ui import render as render_sub01
 from modules.sub02.ui import render as render_sub02
@@ -18,30 +18,44 @@ st.set_page_config(
 )
 
 state = get_state()
-current_user = render_demo_role_selector()
+current_user = render_auth(state)
+if current_user is None:
+    st.stop()
 role = current_user["role"]
 
 st.sidebar.divider()
-st.sidebar.caption(f"Current demo user: {current_user['display_name']}")
+st.sidebar.caption(f"Người dùng: {current_user['display_name']}")
 
+# One product organized by user workflows. Each page still calls its owning SUB.
 role_pages = {
-    "Student": ["Overview", "SUB-01 · Mobility Discovery", "SUB-02 · Shared Trip"],
-    "Private EV Student": ["Overview", "SUB-03 · Private EV Parking"],
-    "Operator": [
-        "Overview",
-        "SUB-04 · Smart Charging",
-        "SUB-05 · Network Operation",
-        "SUB-06 · What-if Simulation",
-    ],
+    "Student": {
+        "overview": "Tổng quan",
+        "discovery": "Tìm kiếm & đặt xe",
+        "trip": "Nhận xe & trả xe",
+    },
+    "Private EV Student": {
+        "overview": "Tổng quan",
+        "parking": "Đỗ xe & yêu cầu sạc",
+    },
+    "Operator": {
+        "overview": "Tổng quan",
+        "charging": "Quản lý sạc",
+        "network": "Vận hành mạng lưới",
+        "simulation": "Mô phỏng What-if",
+    },
 }
-page = st.sidebar.radio("Navigation", role_pages[role])
+page = st.sidebar.radio(
+    "Chức năng",
+    options=list(role_pages[role]),
+    format_func=lambda key: role_pages[role][key],
+)
 
-if page == "Overview":
+if page == "overview":
     st.title("Smart E-Mobility Hub")
     st.write("Electric Mobility Coordination System for the VNU-HCM Urban Area")
     st.info(
-        "Project scaffold đang được khởi tạo. Dữ liệu mẫu được chia sẻ trong cùng "
-        "một tiến trình ứng dụng và sẽ được reset khi khởi động lại app."
+        "Đây là một MVP tích hợp: các nghiệp vụ chia sẻ cùng dữ liệu demo. "
+        "Dữ liệu chỉ lưu trong bộ nhớ và sẽ reset khi khởi động lại ứng dụng."
     )
     hubs = state["hubs"]
     vehicles = state["vehicles"]
@@ -75,15 +89,15 @@ if page == "Overview":
         use_container_width=True,
         hide_index=True,
     )
-elif page.startswith("SUB-01"):
+elif page == "discovery":
     render_sub01(state, current_user)
-elif page.startswith("SUB-02"):
+elif page == "trip":
     render_sub02(state, current_user)
-elif page.startswith("SUB-03"):
+elif page == "parking":
     render_sub03(state, current_user)
-elif page.startswith("SUB-04"):
+elif page == "charging":
     render_sub04(state, current_user)
-elif page.startswith("SUB-05"):
+elif page == "network":
     render_sub05(state, current_user)
-elif page.startswith("SUB-06"):
+elif page == "simulation":
     render_sub06(state, current_user)
