@@ -100,8 +100,10 @@ def _seed_data() -> dict[str, Any]:
         "trips": [],
         "parking_spaces": parking_spaces,
         "parking_reservations": [],
+        "temporary_holds": [],
         "charging_points": charging_points,
-        "charging_requests": [],
+        "charging_requests": [],        # Private EV (SUB-03 -> SUB-04)
+        "shared_charging_requests": [], # Shared EV (SUB-02 -> SUB-04)
         "charging_schedules": [],
         "dispatch_orders": [],
         "incidents": [],
