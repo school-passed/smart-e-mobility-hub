@@ -1,13 +1,10 @@
-"""Authentication flows (Sign Up / Sign In / Sign Out) owned by M2.
-
-Replaces the temporary role selector while keeping compatibility with app.py.
-"""
+"""Authentication flows (Welcome / Sign Up / Sign In / Sign Out) owned by M2."""
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 from typing import Any
-
-import streamlit as st
 
 from shared.enums import (
     ROLE_OPERATOR,
@@ -17,38 +14,182 @@ from shared.enums import (
 from shared.state import get_state
 
 AUTH_USER_KEY = "auth_current_user"
-AUTH_MODE_KEY = "auth_mode"
+AUTH_VIEW_KEY = "auth_screen_view"  # "welcome" | "signin" | "signup"
 
-# Public registration is restricted to student roles. Operator remains a seeded demo account.
 VALID_ROLES = [ROLE_STUDENT, ROLE_PRIVATE_EV_STUDENT]
+MIN_PASSWORD_LENGTH = 8
+
+
+def _hash_password(raw: str) -> str:
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
+def _verify_password(stored: str, raw: str) -> bool:
+    if stored.startswith("sha256$"):
+        return stored == _hash_password(raw)
+    return stored == raw
+
+
+def _stretch_kw(st_mod: Any) -> dict[str, Any]:
+    return (
+        {"width": "stretch"}
+        if "width" in inspect.signature(st_mod.button).parameters
+        else {"use_container_width": True}
+    )
+
 
 _DEFAULT_USERS: list[dict[str, str]] = [
     {
         "user_id": "STU-001",
         "username": "student",
-        "password": "123",
+        "email": "student@vnu.edu.vn",
+        "password": _hash_password("123"),
         "role": ROLE_STUDENT,
-        "display_name": "Demo Student",
+        "display_name": "Nguyễn Minh Khoa",
     },
     {
         "user_id": "PSTU-001",
         "username": "pstudent",
-        "password": "123",
+        "email": "pstudent@vnu.edu.vn",
+        "password": _hash_password("123"),
         "role": ROLE_PRIVATE_EV_STUDENT,
-        "display_name": "Demo Private EV Student",
+        "display_name": "Trần Yến Linh",
     },
     {
         "user_id": "OP-001",
         "username": "operator",
-        "password": "123",
+        "email": "operator@vnu.edu.vn",
+        "password": _hash_password("123"),
         "role": ROLE_OPERATOR,
-        "display_name": "Demo Operator",
+        "display_name": "Đạt (Operator)",
     },
 ]
 
+_AUTH_CSS = """
+<style>
+[data-testid="stAppViewContainer"] {
+    background-color: #FFFFFF;
+}
+[data-testid="stHeader"] {
+    background: transparent;
+}
+[data-testid="stSidebar"] {
+    display: none;
+}
+[data-testid="stMain"] .block-container,
+[data-testid="stMainBlockContainer"] {
+    max-width: 430px !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 2.5rem !important;
+    margin: 0 auto !important;
+}
+
+button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-primaryFormSubmit"],
+div[data-testid="stButton"] button[kind="primary"],
+div[data-testid="stFormSubmitButton"] button[kind="primary"] {
+    background-color: #8CE600 !important;
+    color: #0F172A !important;
+    border: none !important;
+    border-radius: 999px !important;
+    font-weight: 800 !important;
+    font-size: 0.96rem !important;
+    min-height: 2.95rem !important;
+    box-shadow: 0 4px 14px rgba(140, 230, 0, 0.28) !important;
+}
+button[data-testid="stBaseButton-primary"]:hover,
+button[data-testid="stBaseButton-primaryFormSubmit"]:hover,
+div[data-testid="stButton"] button[kind="primary"]:hover,
+div[data-testid="stFormSubmitButton"] button[kind="primary"]:hover {
+    background-color: #7ED100 !important;
+    color: #0F172A !important;
+}
+
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="stBaseButton-secondaryFormSubmit"],
+div[data-testid="stButton"] button[kind="secondary"],
+div[data-testid="stFormSubmitButton"] button[kind="secondary"] {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 999px !important;
+    font-weight: 700 !important;
+    font-size: 0.94rem !important;
+    min-height: 2.9rem !important;
+}
+button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stButton"] button[kind="secondary"]:hover {
+    border-color: #8CE600 !important;
+    background-color: #F7FEE7 !important;
+}
+
+div[data-testid="stTextInput"] input {
+    border-radius: 12px !important;
+    border: 1px solid #E2E8F0 !important;
+    background-color: #F8FAFC !important;
+    min-height: 2.7rem;
+}
+
+.emob-welcome-banner {
+    position: relative;
+    height: 330px;
+    border-radius: 22px;
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.22) 0%, rgba(15, 23, 42, 0.58) 55%, rgba(15, 23, 42, 0.85) 100%),
+        url("https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=900&q=80") center/cover no-repeat,
+        linear-gradient(135deg, #064E3B 0%, #0F172A 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 26px 24px;
+    margin-bottom: 18px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+.emob-welcome-sub {
+    color: #FFFFFF;
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+.emob-welcome-brand {
+    color: #8CE600;
+    font-size: 1.65rem;
+    font-weight: 900;
+    line-height: 1.22;
+    margin-top: 2px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+}
+.emob-welcome-prompt {
+    text-align: center;
+    color: #475569;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin: 6px 0 14px 0;
+}
+.emob-page-heading {
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: #0F172A;
+    margin: 8px 0 14px 0;
+    letter-spacing: -0.02em;
+}
+.emob-demo-caption {
+    text-align: center;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #94A3B8;
+    margin: 14px 0 6px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+</style>
+"""
+
 
 def _ensure_users(state: dict[str, Any]) -> list[dict[str, str]]:
-    """Initialize process-wide user list inside shared state if missing."""
     if "users" not in state:
         state["users"] = [dict(u) for u in _DEFAULT_USERS]
     return state["users"]
@@ -59,25 +200,33 @@ def _generate_user_id(users: list[dict[str, str]], role: str) -> str:
         ROLE_STUDENT: "STU",
         ROLE_PRIVATE_EV_STUDENT: "PSTU",
         ROLE_OPERATOR: "OP",
-    }.get(role, "USR")
+    }.get(role, "STU")
     count = sum(1 for u in users if u["user_id"].startswith(f"{prefix}-")) + 1
     return f"{prefix}-{count:03d}"
 
 
 def sign_in(state: dict[str, Any], username: str, password: str) -> tuple[bool, str, dict[str, str] | None]:
-    username = (username or "").strip().lower()
+    identifier = (username or "").strip().lower()
     password = (password or "").strip()
-    if not username or not password:
-        return False, "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.", None
+    if not identifier or not password:
+        return False, "Vui lòng nhập đầy đủ Email và mật khẩu.", None
 
     users = _ensure_users(state)
-    user = next((u for u in users if u["username"].lower() == username), None)
-    if user is None or user["password"] != password:
-        return False, "Sai tên đăng nhập hoặc mật khẩu.", None
+    user = next(
+        (
+            u
+            for u in users
+            if u["username"].lower() == identifier or u.get("email", "").lower() == identifier
+        ),
+        None,
+    )
+    if user is None or not _verify_password(user.get("password", ""), password):
+        return False, "Sai email hoặc mật khẩu.", None
 
     session_user = {
         "user_id": user["user_id"],
         "username": user["username"],
+        "email": user.get("email", f"{user['username']}@vnu.edu.vn"),
         "role": user["role"],
         "display_name": user["display_name"],
     }
@@ -90,30 +239,39 @@ def sign_up(
     password: str,
     confirm_password: str,
     display_name: str,
-    role: str,
+    role: str = ROLE_STUDENT,
+    dob: str = "",
+    accepted_terms: bool = True,
 ) -> tuple[bool, str, dict[str, str] | None]:
-    username = (username or "").strip().lower()
+    identifier = (username or "").strip().lower()
     password = (password or "").strip()
     confirm_password = (confirm_password or "").strip()
     display_name = (display_name or "").strip()
 
-    if not username or not password or not display_name:
-        return False, "Vui lòng điền đầy đủ thông tin bắt buộc.", None
-    if len(password) < 3:
-        return False, "Mật khẩu phải có ít nhất 3 ký tự.", None
+    if not identifier or not password or not display_name:
+        return False, "Vui lòng điền đầy đủ Họ và tên, Email và Mật khẩu.", None
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return False, f"Mật khẩu phải có ít nhất {MIN_PASSWORD_LENGTH} ký tự.", None
     if password != confirm_password:
         return False, "Mật khẩu xác nhận không khớp.", None
     if role not in VALID_ROLES:
-        return False, "Vai trò không hợp lệ.", None
+        return False, "Vai trò đăng ký không hợp lệ (chỉ hỗ trợ tài khoản sinh viên).", None
+    if not accepted_terms:
+        return False, "Vui lòng đồng ý với các Điều khoản & Quy định.", None
 
     users = _ensure_users(state)
-    if any(u["username"].lower() == username for u in users):
-        return False, "Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.", None
+    if any(
+        u["username"].lower() == identifier or u.get("email", "").lower() == identifier
+        for u in users
+    ):
+        return False, "Email này đã được đăng ký. Vui lòng dùng email khác.", None
 
     new_user = {
         "user_id": _generate_user_id(users, role),
-        "username": username,
-        "password": password,
+        "username": identifier,
+        "email": identifier if "@" in identifier else f"{identifier}@vnu.edu.vn",
+        "dob": (dob or "").strip(),
+        "password": _hash_password(password),
         "role": role,
         "display_name": display_name,
     }
@@ -121,6 +279,7 @@ def sign_up(
     session_user = {
         "user_id": new_user["user_id"],
         "username": new_user["username"],
+        "email": new_user["email"],
         "role": new_user["role"],
         "display_name": new_user["display_name"],
     }
@@ -128,84 +287,185 @@ def sign_up(
 
 
 def sign_out() -> None:
+    import streamlit as st
+
     st.session_state.pop(AUTH_USER_KEY, None)
+    st.session_state[AUTH_VIEW_KEY] = "welcome"
 
 
-def render_auth(state: dict[str, Any] | None = None) -> dict[str, str] | None:
-    """Render Sign In / Sign Up / Sign Out UI.
+def _render_quick_demo_bar(app_state: dict[str, Any]) -> None:
+    import streamlit as st
 
-    When signed in, displays account info and Sign Out button in the sidebar
-    and returns ``current_user``. When signed out, renders the Sign In / Sign Up
-    screens in the main area and returns ``None``.
-    """
+    kw = _stretch_kw(st)
+    st.markdown('<div class="emob-demo-caption">⚡ Demo nhanh 1 chạm (Pass: 123)</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    if c1.button("🎓 Sinh viên (Demo)", key="quick_demo_stu", **kw):
+        _, _, user = sign_in(app_state, "student", "123")
+        st.session_state[AUTH_USER_KEY] = user
+        st.rerun()
+    if c2.button("🛠️ Operator (Demo)", key="quick_demo_op", **kw):
+        _, _, user = sign_in(app_state, "operator", "123")
+        st.session_state[AUTH_USER_KEY] = user
+        st.rerun()
+
+
+def render_auth(
+    state: dict[str, Any] | None = None, render_sidebar: bool = True
+) -> dict[str, str] | None:
+    """Render Welcome / Sign In / Sign Up / Sign Out UI."""
+    import streamlit as st
+
+    kw = _stretch_kw(st)
     app_state = state if state is not None else get_state()
     _ensure_users(app_state)
 
     current_user: dict[str, str] | None = st.session_state.get(AUTH_USER_KEY)
     if current_user is not None:
-        with st.sidebar:
-            st.markdown("### Tài khoản")
-            st.info(
-                f"**{current_user['display_name']}**\n\n"
-                f"ID: `{current_user['user_id']}` · Role: `{current_user['role']}`"
-            )
-            if st.button("Sign Out", use_container_width=True, key="auth_sign_out_btn"):
-                sign_out()
-                st.rerun()
+        if render_sidebar and current_user.get("role") == ROLE_OPERATOR:
+            with st.sidebar:
+                st.markdown("### Tài khoản")
+                st.info(
+                    f"**{current_user['display_name']}**\n\n"
+                    f"ID: `{current_user['user_id']}` · Role: `{current_user['role']}`"
+                )
+                if st.button("Sign Out", key="auth_sign_out_btn", **kw):
+                    sign_out()
+                    st.rerun()
         return current_user
 
-    # Chưa đăng nhập: hiển thị màn hình Sign In / Sign Up
-    st.title("Smart E-Mobility Hub · Authentication")
-    tab_login, tab_signup = st.tabs(["Sign In (Đăng nhập)", "Sign Up (Đăng ký)"])
+    st.markdown(_AUTH_CSS, unsafe_allow_html=True)
+    st.session_state.setdefault(AUTH_VIEW_KEY, "welcome")
+    view = st.session_state[AUTH_VIEW_KEY]
 
-    with tab_login:
-        with st.form("auth_signin_form"):
-            username = st.text_input("Username", placeholder="student / pstudent / operator")
-            password = st.text_input("Password", type="password", placeholder="123")
-            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
-        if submitted:
+    # =========================================================================
+    # MÀN HÌNH 1: WELCOME TO SMART E-MOBILITY HUB
+    # =========================================================================
+    if view == "welcome":
+        st.markdown(
+            """
+            <div class="emob-welcome-banner">
+                <div class="emob-welcome-sub">Welcome to</div>
+                <div class="emob-welcome-brand">Smart E-mobility Hub</div>
+            </div>
+            <div class="emob-welcome-prompt">Đăng nhập hoặc đăng ký để tiếp tục</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Tạo tài khoản mới", type="primary", key="welcome_goto_signup", **kw):
+            st.session_state[AUTH_VIEW_KEY] = "signup"
+            st.rerun()
+
+        st.write("")
+        if st.button("Đã có tài khoản", type="secondary", key="welcome_goto_signin", **kw):
+            st.session_state[AUTH_VIEW_KEY] = "signin"
+            st.rerun()
+
+        _render_quick_demo_bar(app_state)
+
+    # =========================================================================
+    # MÀN HÌNH 2: TẠO TÀI KHOẢN MỚI (ĐÚNG 5 TRƯỜNG NHƯ THIẾT KẾ)
+    # =========================================================================
+    elif view == "signup":
+        back_col, _ = st.columns([1, 5])
+        if back_col.button("‹", key="signup_back_btn", **kw):
+            st.session_state[AUTH_VIEW_KEY] = "welcome"
+            st.rerun()
+
+        st.markdown('<div class="emob-page-heading">Tạo tài khoản mới</div>', unsafe_allow_html=True)
+
+        new_display_name = st.text_input("Họ và tên", placeholder="Nguyễn Văn A", key="su_name")
+        new_dob = st.text_input("Ngày sinh", placeholder="DD/MM/YYYY", key="su_dob")
+        new_email = st.text_input("Email", placeholder="yourname@email.com", key="su_email")
+        new_password = st.text_input("Mật khẩu", type="password", placeholder="Tối thiểu 8 ký tự", key="su_pass")
+        confirm_password = st.text_input(
+            "Xác nhận mật khẩu", type="password", placeholder="Nhập lại mật khẩu", key="su_confirm"
+        )
+        agreed = st.checkbox("Tôi đồng ý với các **Điều khoản & Quy định**", value=False, key="su_terms")
+
+        if st.button("Tạo tài khoản", type="primary", key="su_submit_btn", **kw):
+            ok, msg, user = sign_up(
+                app_state,
+                username=new_email,
+                password=new_password,
+                confirm_password=confirm_password,
+                display_name=new_display_name,
+                role=ROLE_STUDENT,
+                dob=new_dob,
+                accepted_terms=agreed,
+            )
+            if ok and user is not None:
+                st.session_state[AUTH_USER_KEY] = user
+                st.rerun()
+            else:
+                st.error(msg)
+
+        st.write("")
+        f1, f2 = st.columns([1.4, 1])
+        f1.markdown(
+            '<div style="text-align:right;padding-top:10px;color:#64748B;font-size:0.88rem;">Đã có tài khoản?</div>',
+            unsafe_allow_html=True,
+        )
+        if f2.button("Đăng nhập", type="secondary", key="su_switch_signin"):
+            st.session_state[AUTH_VIEW_KEY] = "signin"
+            st.rerun()
+
+    # =========================================================================
+    # MÀN HÌNH 3: ĐĂNG NHẬP
+    # =========================================================================
+    else:
+        back_col, _ = st.columns([1, 5])
+        if back_col.button("‹", key="signin_back_btn", **kw):
+            st.session_state[AUTH_VIEW_KEY] = "welcome"
+            st.rerun()
+
+        st.markdown('<div class="emob-page-heading">Đăng nhập</div>', unsafe_allow_html=True)
+
+        username = st.text_input(
+            "Email",
+            placeholder="yourname@email.com",
+            key="si_user",
+        )
+        password = st.text_input(
+            "Mật khẩu",
+            type="password",
+            placeholder="Nhập mật khẩu của bạn",
+            key="si_pass",
+        )
+
+        r1, r2 = st.columns([1.3, 1])
+        r1.checkbox("Ghi nhớ đăng nhập", value=True, key="si_remember")
+        r2.markdown(
+            '<div style="text-align:right;padding-top:6px;font-size:0.84rem;font-weight:700;color:#0F172A;">Quên mật khẩu?</div>',
+            unsafe_allow_html=True,
+        )
+
+        if st.button("Đăng nhập", type="primary", key="si_submit_btn", **kw):
             ok, msg, user = sign_in(app_state, username, password)
             if ok and user is not None:
                 st.session_state[AUTH_USER_KEY] = user
-                st.success(msg)
                 st.rerun()
             else:
                 st.error(msg)
 
-        st.caption("Tài khoản demo nhanh (mật khẩu chung: `123`): `student`, `pstudent`, `operator`.")
+        st.write("")
+        f1, f2 = st.columns([1.4, 1])
+        f1.markdown(
+            '<div style="text-align:right;padding-top:10px;color:#64748B;font-size:0.88rem;">Chưa có tài khoản?</div>',
+            unsafe_allow_html=True,
+        )
+        if f2.button("Đăng ký", type="secondary", key="si_switch_signup"):
+            st.session_state[AUTH_VIEW_KEY] = "signup"
+            st.rerun()
 
-    with tab_signup:
-        with st.form("auth_signup_form"):
-            new_display_name = st.text_input("Họ và tên hiển thị", placeholder="Nguyễn Văn A")
-            new_username = st.text_input("Tên đăng nhập (Username)", placeholder="nguyenvana")
-            new_role = st.selectbox("Vai trò (Role)", VALID_ROLES)
-            new_password = st.text_input("Mật khẩu", type="password")
-            confirm_password = st.text_input("Xác nhận mật khẩu", type="password")
-            reg_submitted = st.form_submit_button("Sign Up", type="primary", use_container_width=True)
-        if reg_submitted:
-            ok, msg, user = sign_up(
-                app_state,
-                new_username,
-                new_password,
-                confirm_password,
-                new_display_name,
-                new_role,
-            )
-            if ok and user is not None:
-                st.session_state[AUTH_USER_KEY] = user
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
+        _render_quick_demo_bar(app_state)
 
     return None
 
 
 def render_demo_role_selector() -> dict[str, str]:
-    """Backward-compatible entry point for app.py.
+    """Backward-compatible entry point for app.py."""
+    import streamlit as st
 
-    Stops page rendering until the user signs in, then returns ``current_user``.
-    """
     user = render_auth(get_state())
     if user is None:
         st.stop()

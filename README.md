@@ -1,115 +1,45 @@
-# Smart E-Mobility Hub – MVP Starter
+# Smart E-Mobility Hub — Final Integrated MVP
 
-This is the initial project scaffold for the CO3001 Software Engineering final MVP.
+Hệ thống điều phối phương tiện điện cho Khu đô thị ĐHQG-HCM (**CO3001 — Công nghệ Phần mềm**), hợp nhất trọn vẹn chuẩn giao diện **Mobile App Sinh viên** (`feature/student-ui`), **Web Console Điều hành Operator** (`feature/operator-ui`) và toàn bộ nghiệp vụ tích hợp liên phân hệ (`SUB-01` đến `SUB-06`).
 
-## Agreed implementation approach
+## 1. Kiến trúc & Giao diện thống nhất theo Submission #2
 
-- Python 3.11
-- Streamlit for the web UI and Python application runtime
-- One application, organized into six SUB modules (modular monolith)
-- Shared in-memory state for the local demonstration
-- No database server, REST API, microservices, message broker, real IoT hardware, GPS integration or cloud deployment in this MVP
+- **Giao diện Sinh viên (Mobile App Frame `440px` — Hình 49–54):**
+  - Luồng xác thực 3 màn hình (`Welcome` → `Tạo tài khoản mới` / `Đăng nhập`) với mật khẩu băm `SHA-256`.
+  - Thanh điều hướng 4 tab ở đáy: **📍 Khám phá** (`SUB-01`), **🔖 Của tôi** (`SUB-02`), **⚡ Đỗ & Sạc** (`SUB-03`) và **👤 Hồ sơ**.
+- **Giao diện Nhân viên vận hành (Operator Desktop Console — Hình 55–65):**
+  - Thanh Sidebar 7 chức năng kèm icon SVG & huy hiệu đếm sự cố đang mở: **Tổng quan mạng lưới**, **Điều chuyển xe**, **Giám sát tài nguyên sạc**, **Ưu tiên yêu cầu sạc**, **Lập lịch sạc**, **Sự cố**, **What-if Simulation**.
+- **Nghiệp vụ lõi & Đồng bộ trạng thái (`shared/state.py` & `modules/sub01..06/service.py`):**
+  - Bảo vệ nguyên tử bằng khóa đồng bộ `STATE_LOCK` / `@atomic`.
+  - Tách biệt hoàn toàn dữ liệu vận hành (`_STORE`) và dữ liệu mô phỏng What-if (`_SANDBOX_STORE`).
 
-The assignment brief permits hard-coded data and does not require a backend database for the MVP demonstration.
-
-## Important data limitation
-
-`shared/state.py` stores demo data in one process-wide Python object. Browser sessions connected to the same app process share that data. Data is lost when the app process restarts, and multiple server workers would have separate copies. This is intentionally a lightweight demo-only approach, not production persistence.
-
-`shared/auth.py` currently provides a temporary role selector for development. M2 is responsible for replacing it with the agreed Sign Up / Sign In / Sign Out demo flows.
-
-## Run the demo on Windows PowerShell
-
-Open PowerShell in the project directory. If the project already has a `.venv`
-folder, run Streamlit through that environment's Python executable:
+## 2. Hướng dẫn chạy ứng dụng (Windows PowerShell)
 
 ```powershell
-Set-Location D:\MinhHuy\CNPM\smart-e-mobility-hub
+Set-Location C:\BachKhoa\Study\CNPM\smart-e-mobility-hub-git
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-This command does not require activating the virtual environment or adding the
-`streamlit` command to the global PATH. In the current local setup, `.venv`
-contains Python 3.10.11 and Streamlit 1.65.0. The project specification calls
-for Python 3.11; use the setup below when creating a fresh team environment.
+### Tài khoản mẫu (Mật khẩu chung: `123`)
+- **`student` / `123`** (`student@vnu.edu.vn`) — *Student*: Khám phá trạm, tìm xe, đặt giữ xe, quét nhận xe, báo lỗi đổi xe và trả xe (`SUB-01`, `SUB-02`).
+- **`pstudent` / `123`** (`pstudent@vnu.edu.vn`) — *Private EV Student*: Đặt chỗ đỗ xe cá nhân theo ca, Check-in/out và đăng ký lịch sạc (`SUB-03`).
+- **`operator` / `123`** (`operator@vnu.edu.vn`) — *Operator*: Giám sát mạng lưới, điều chuyển xe, quản lý sự cố, ưu tiên & lập lịch sạc, chạy đủ 5 kịch bản What-if (`SUB-04`, `SUB-05`, `SUB-06`).
 
-When Streamlit starts, choose **Operator** in the sidebar and open
-**SUB-06 · What-if Simulation**. Select a scenario, Hub and time window, set
-the assumptions, then capture the snapshot and run the simulation.
+## 3. Thứ tự demo 6 phân hệ
 
-### Create a fresh Python 3.11 environment
+1. Đăng nhập `student`, vào **Khám phá**, lọc và đặt xe tại một Hub. Mở **Của tôi** để nhận xe bằng mã mô phỏng. Trả xe với pin 12% để tạo nhu cầu sạc xe dùng chung.
+2. Đăng nhập `pstudent`, vào **Đỗ & Sạc**. Chọn ô có sạc và ca bao gồm giờ hiện tại nếu cần check-in ngay. Xác nhận phiếu, đăng ký sạc trong giờ đỗ và check-in qua **Phiếu đỗ & Lịch sạc của tôi**.
+3. Đăng nhập `operator`, mở **Ưu tiên yêu cầu sạc**, chọn cùng Hub và bổ sung giờ cần xe cho yêu cầu xe dùng chung. Ngưỡng ưu tiên sạc là 30%. Ngưỡng vận hành của xe dùng chung là 20%. Xem phương án, xác nhận phần khả thi rồi đối chiếu công suất và trụ theo khung giờ. [Các bước demo SUB-04](modules/sub04/DEMO.md)
+4. Mở **Tổng quan mạng lưới**, xem cảnh báo và tạo lệnh điều chuyển giữa hai Hub khả dụng. Sau đó dùng **Sự cố** để báo hỏng một trụ đã có lịch và xác nhận trụ thay thế ở **Lập lịch sạc**.
+5. Mở **What-if Simulation**, chọn Hub và chạy từng kịch bản. Trong khi một phiên còn chạy, có thể mở Dashboard rồi quay lại để hủy phiên. Kết quả lưu trong sandbox.
+
+Giữ cùng một tiến trình Streamlit khi đổi vai trò để các tuyến nghiệp vụ dùng chung dữ liệu. Khởi động lại tiến trình để phục hồi dữ liệu mẫu. Khóa xe, cảm biến bãi đỗ và thiết bị sạc được giả lập.
+
+## 4. Chạy bộ kiểm thử tự động
+
+Xem [kịch bản kiểm thử 6 SUB và cách gửi nhánh cho nhóm](TEST_PLAN.md).
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --no-cache-dir -r requirements.txt
-python -m streamlit run app.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+.\.venv\Scripts\python.exe -m unittest discover -s modules/sub04 -p "test_*.py" -v
 ```
-
-Open the local URL printed by Streamlit in the terminal.
-
-Keep `.venv` inside the project folder so the dependencies stay with the
-checkout. If the project is on D:, this also keeps the installed packages off
-the nearly full C: drive.
-
-## SUB-06 What-if Simulation demo
-
-Run the same application command above, choose the **Operator** demo role, then
-open **SUB-06 · What-if Simulation** from the sidebar. The demo currently
-supports three agreed scenarios:
-
-- Metro Hub demand surge
-- Hub near capacity or vehicle shortage
-- Charging demand surge or charging point failure
-
-The Operator selects a Hub and time window, confirms a copied network snapshot,
-and runs the scenario. Demand values that are not part of the shared seed data
-are entered as explicit scenario assumptions. Results compare before/after
-metrics and offer suggestions; they never execute dispatch or change live
-operational records. Two additional scenario choices from UC-15 remain to be
-confirmed by the team before implementation.
-
-## Initial demo data
-
-- 5 Mobility Hubs
-- 50 shared electric vehicles (10 per Hub)
-- 100 private parking spaces (20 per Hub)
-- 20 charging points (4 per Hub)
-
-Names and sample resource states are illustrative seed data. Members may refine sample values, but must not change shared status names without team agreement.
-
-## Project structure
-
-```text
-app.py
-shared/
-  auth.py       # temporary role selector; M2 replaces with Authentication UCs
-  enums.py      # canonical shared status values
-  state.py      # process-wide in-memory demo data
-modules/
-  sub01/        # M1 owns working initial implementation
-  sub02/        # M2 implements UC-04 and UC-05
-  sub03/        # M3 implements UC-06-01 to UC-07-02
-  sub04/        # M4 implements UC-08 to UC-10
-  sub05/        # M5 implements UC-11 to UC-14
-  sub06/        # M6 implements UC-15 to UC-17
-```
-
-## Team rules
-
-1. Each member edits their own `modules/subXX/` directory. Shared files are changed only after team agreement.
-2. Only the owning SUB changes its records. Other SUBs call the owner's service function.
-3. SUB-01 owns shared vehicle reservations; SUB-02 owns shared vehicle trip/lifecycle state.
-4. SUB-03 owns parking and charging requests; SUB-04 owns charging schedules and resource allocations.
-5. SUB-05 reads operational resource data and performs dispatch through owning SUB services.
-6. SUB-06 runs on a copied snapshot and never changes live operational state.
-7. Run the application after every integration change. Do not wait until the final day to merge.
-
-## Current status
-
-- Initial project structure: created
-- Shared demo data: created
-- Temporary role selector: created
-- SUB-01 Hub discovery, vehicle search and reservation foundation: implemented
-- SUB-02 through SUB-05: starter placeholders awaiting their owners
-- SUB-06: three-scenario What-if Simulation demo implemented; additional UC-15 scenarios pending team confirmation

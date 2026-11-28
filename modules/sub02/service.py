@@ -1,3 +1,4 @@
+"""SUB-02 business logic: Vehicle Trip Lifecycle (UC-04 & UC-05)."""
 
 from __future__ import annotations
 
@@ -6,15 +7,21 @@ from typing import Any
 
 from modules.sub01 import service as sub01_service
 from shared.enums import (
-    CHARGING_REQUEST_PENDING,
     PARKING_AVAILABLE,
+    RESERVATION_CONSUMED,
     RESERVATION_PENDING,
     VEHICLE_AVAILABLE,
     VEHICLE_CHARGING,
     VEHICLE_IN_USE,
     VEHICLE_UNAVAILABLE,
 )
-from shared.state import get_state
+from shared.state import (
+    atomic,
+    available_vehicle,
+    free_spaces,
+    get_state,
+    release_vehicle_space,
+)
 
 MIN_OPERATING_BATTERY_LEVEL = 20
 
@@ -36,11 +43,7 @@ def _find_trip(state: dict[str, Any], trip_id: str) -> dict[str, Any] | None:
 
 
 def _available_parking_count(state: dict[str, Any], hub_id: str) -> int:
-    return sum(
-        1
-        for p in state["parking_spaces"]
-        if p["hub_id"] == hub_id and p["status"] == PARKING_AVAILABLE
-    )
+    return len(free_spaces(state, hub_id))
 
 
 def _notify_sub05_incident(
@@ -67,11 +70,7 @@ def _notify_sub05_incident(
 def _create_low_battery_charging_request(
     state: dict[str, Any], vehicle: dict[str, Any], now_iso: str
 ) -> dict[str, Any]:
-    """Use SUB-04's existing shared-vehicle request contract instead of a parallel schema.
-
-    The request intentionally has no departure_time until Operator supplies it.
-    Kept ``now_iso`` in the signature for compatibility with the existing return flow.
-    """
+    """Send low-battery shared EV charging need to SUB-04."""
     from modules.sub04 import service as charging_service
 
     return charging_service.receive_shared_vehicle_charging_need(
@@ -101,17 +100,19 @@ def get_student_trips(state: dict[str, Any], student_id: str) -> list[dict[str, 
 
 def get_available_vehicles_at_hub(state: dict[str, Any], hub_id: str) -> list[dict[str, Any]]:
     """Return AVAILABLE vehicles currently parked at a Hub."""
-    return [
+    vehicles = [
         v
         for v in state["vehicles"]
-        if v["hub_id"] == hub_id and v["status"] == VEHICLE_AVAILABLE
+        if v["hub_id"] == hub_id and available_vehicle(state, v)
     ]
+    return sorted(vehicles, key=lambda v: v["battery_level"], reverse=True)
 
 
 # ---------------------------------------------------------------------------
 # UC-04: Pick Up Shared Vehicle
 # ---------------------------------------------------------------------------
 
+@atomic
 def pickup_vehicle(
     state: dict[str, Any],
     student_id: str,
@@ -124,13 +125,6 @@ def pickup_vehicle(
     current_time = now or _now()
     sub01_service.expire_pending_reservations(state, current_time)
 
-    if get_active_trip(state, student_id) is not None:
-        return {
-            "ok": False,
-            "status": "ACTIVE_TRIP_EXISTS",
-            "message": "Bạn đang có một chuyến đi chưa kết thúc. Vui lòng trả xe trước khi nhận xe mới.",
-        }
-
     reservation = next(
         (r for r in state["reservations"] if r["reservation_id"] == reservation_id),
         None,
@@ -139,6 +133,33 @@ def pickup_vehicle(
         return {"ok": False, "status": "RESERVATION_NOT_FOUND", "message": "Không tìm thấy đơn đặt chỗ."}
     if reservation["student_id"] != student_id:
         return {"ok": False, "status": "NOT_RESERVATION_OWNER", "message": "Đơn đặt chỗ không thuộc tài khoản hiện tại."}
+
+    # Idempotent replay check: same student + reservation + vehicle already picked up
+    existing_trip = next(
+        (
+            t
+            for t in state["trips"]
+            if t["reservation_id"] == reservation_id
+            and t["student_id"] == student_id
+            and t["vehicle_id"] == vehicle_id
+        ),
+        None,
+    )
+    if reservation["status"] == RESERVATION_CONSUMED and existing_trip is not None:
+        return {
+            "ok": True,
+            "status": "SUCCESS",
+            "message": f"Yêu cầu nhận xe đã được ghi nhận trước đó (Chuyến {existing_trip['trip_id']}).",
+            "trip": existing_trip,
+        }
+
+    if get_active_trip(state, student_id) is not None:
+        return {
+            "ok": False,
+            "status": "ACTIVE_TRIP_EXISTS",
+            "message": "Bạn đang có một chuyến đi chưa kết thúc. Vui lòng trả xe trước khi nhận xe mới.",
+        }
+
     if reservation["status"] != RESERVATION_PENDING:
         return {
             "ok": False,
@@ -157,20 +178,25 @@ def pickup_vehicle(
             "status": "VEHICLE_AT_ANOTHER_HUB",
             "message": f"Xe {vehicle_id} đang ở {vehicle['hub_id']}, không khớp Hub đặt chỗ ({reservation['hub_id']}).",
         }
-    if vehicle["status"] != VEHICLE_AVAILABLE:
+    if not available_vehicle(state, vehicle):
         return {
             "ok": False,
             "status": "VEHICLE_NOT_AVAILABLE",
             "message": f"Xe {vehicle_id} không khả dụng (trạng thái: {vehicle['status']}).",
         }
+    if vehicle["battery_level"] < MIN_OPERATING_BATTERY_LEVEL:
+        return {
+            "ok": False,
+            "status": "LOW_BATTERY",
+            "message": f"Xe {vehicle_id} có mức pin {vehicle['battery_level']}% (< {MIN_OPERATING_BATTERY_LEVEL}%), không đủ điều kiện vận hành.",
+        }
 
-    # Gọi SUB-01 để consume reservation và giải phóng reserved slot
     consumed, consume_msg = sub01_service.consume_reservation(state, reservation_id, current_time)
     if not consumed:
         return {"ok": False, "status": "CONSUME_FAILED", "message": consume_msg}
 
-    # Cập nhật trạng thái xe và tạo TripRecord
     now_iso = current_time.isoformat(timespec="seconds")
+    release_vehicle_space(state, vehicle_id)
     vehicle["status"] = VEHICLE_IN_USE
 
     trip_num = state["next_trip_number"]
@@ -198,6 +224,7 @@ def pickup_vehicle(
     }
 
 
+@atomic
 def report_defective_vehicle_at_pickup(
     state: dict[str, Any],
     student_id: str,
@@ -205,10 +232,10 @@ def report_defective_vehicle_at_pickup(
     vehicle_id: str,
     issue_desc: str,
 ) -> dict[str, Any]:
-    """Mark vehicle UNAVAILABLE, notify SUB-05, and keep reservation PENDING."""
+    """Mark vehicle UNAVAILABLE, notify SUB-05, and keep reservation PENDING (UC-04 A1)."""
     issue_desc = (issue_desc or "").strip()
     if not issue_desc:
-        return {"ok": False, "message": "Vui lòng nhập mô tả sự cố của phương tiện."}
+        return {"ok": False, "message": "Vui lòng chọn hoặc nhập mô tả sự cố của phương tiện."}
 
     sub01_service.expire_pending_reservations(state)
     reservation = next(
@@ -223,14 +250,25 @@ def report_defective_vehicle_at_pickup(
     vehicle = _find_vehicle(state, vehicle_id)
     if vehicle is None or vehicle["hub_id"] != reservation["hub_id"]:
         return {"ok": False, "message": "Phương tiện không tồn tại tại Hub của đơn đặt chỗ."}
+    if vehicle["status"] == VEHICLE_IN_USE:
+        return {"ok": False, "message": f"Xe {vehicle_id} đang trong chuyến đi khác, không thể báo lỗi tại bãi."}
 
+    inc_msg = _notify_sub05_incident(vehicle_id, f"[Tại bãi Pickup] {issue_desc}", reported_by=student_id)
+    vehicle["incident_blocked"] = True
     vehicle["status"] = VEHICLE_UNAVAILABLE
-    inc_msg = _notify_sub05_incident(vehicle_id, f"[Pickup] {issue_desc}", reported_by=student_id)
+
+    remaining = len(get_available_vehicles_at_hub(state, reservation["hub_id"]))
+    replacement_note = (
+        f"Hiện trạm còn {remaining} xe khả dụng để bạn chọn thay thế."
+        if remaining > 0
+        else "Hiện trạm không còn xe khả dụng thay thế; bạn có thể hủy đơn đặt chỗ miễn phí."
+    )
     return {
         "ok": True,
+        "remaining_vehicles": remaining,
         "message": (
-            f"Đã đánh dấu xe {vehicle_id} là UNAVAILABLE và giữ nguyên đơn {reservation_id} "
-            f"để bạn chọn xe khác. {inc_msg}"
+            f"Đã cô lập xe {vehicle_id} (UNAVAILABLE) và giữ nguyên đơn {reservation_id}. "
+            f"{replacement_note} {inc_msg}"
         ).strip(),
     }
 
@@ -239,6 +277,7 @@ def report_defective_vehicle_at_pickup(
 # UC-05: Return Shared Vehicle
 # ---------------------------------------------------------------------------
 
+@atomic
 def return_vehicle(
     state: dict[str, Any],
     student_id: str,
@@ -246,24 +285,39 @@ def return_vehicle(
     destination_hub_id: str,
     final_battery: int,
     now: datetime | None = None,
+    fault_description: str | None = None,
 ) -> dict[str, Any]:
     """Close active trip, update vehicle hub/battery/status, trigger SUB-04 if low battery."""
     current_time = now or _now()
     trip = _find_trip(state, trip_id)
-    if trip is None or not trip["is_active"]:
-        return {"ok": False, "status": "ACTIVE_TRIP_NOT_FOUND", "message": "Không tìm thấy chuyến đi đang hoạt động."}
+    if trip is None:
+        return {"ok": False, "status": "ACTIVE_TRIP_NOT_FOUND", "message": "Không tìm thấy chuyến đi."}
     if trip["student_id"] != student_id:
         return {"ok": False, "status": "NOT_TRIP_OWNER", "message": "Chuyến đi không thuộc tài khoản hiện tại."}
+    if not trip["is_active"]:
+        return {"ok": False, "status": "ACTIVE_TRIP_NOT_FOUND", "message": "Chuyến đi này đã kết thúc trước đó."}
 
     dest_hub = _find_hub(state, destination_hub_id)
     if dest_hub is None:
         return {"ok": False, "status": "HUB_NOT_FOUND", "message": "Không tìm thấy Hub đích."}
 
-    if _available_parking_count(state, destination_hub_id) <= 0:
+    spaces = free_spaces(state, destination_hub_id)
+    if not spaces:
+        suggested = [
+            {"hub_id": h["hub_id"], "name": h["name"], "free_spaces": len(free_spaces(state, h["hub_id"]))}
+            for h in state["hubs"]
+            if h["hub_id"] != destination_hub_id and len(free_spaces(state, h["hub_id"])) > 0
+        ]
+        hint = (
+            " Gợi ý trạm còn chỗ: " + ", ".join(f"{s['name']} ({s['free_spaces']} chỗ)" for s in suggested) + "."
+            if suggested
+            else " Hiện tất cả các trạm lân cận đều đã đầy."
+        )
         return {
             "ok": False,
             "status": "DESTINATION_HUB_FULL",
-            "message": f"{dest_hub['name']} đã hết chỗ đỗ trống. Vui lòng chọn Hub lân cận.",
+            "suggested_hubs": suggested,
+            "message": f"{dest_hub['name']} đã hết chỗ đỗ trống.{hint}",
         }
 
     if not (0 <= final_battery <= 100):
@@ -274,24 +328,41 @@ def return_vehicle(
         return {"ok": False, "status": "VEHICLE_NOT_FOUND", "message": "Không tìm thấy phương tiện của chuyến đi."}
 
     now_iso = current_time.isoformat(timespec="seconds")
+    spaces[0].update(status="IN_USE", vehicle_id=vehicle["vehicle_id"])
     vehicle["hub_id"] = destination_hub_id
     vehicle["battery_level"] = int(final_battery)
 
+    fault_text = (fault_description or "").strip()
+    if fault_text:
+        vehicle["incident_blocked"] = True
+        _notify_sub05_incident(
+            vehicle["vehicle_id"], f"[Khi trả xe] {fault_text}", reported_by=student_id
+        )
+
     charging_request = None
     if final_battery < MIN_OPERATING_BATTERY_LEVEL:
-        vehicle["status"] = VEHICLE_CHARGING
         charging_request = _create_low_battery_charging_request(state, vehicle, now_iso)
-        result_status = "BATTERY_CRITICAL_ROUTED_TO_CHARGING"
-        extra_msg = (
-            f" Pin còn {final_battery}% (< {MIN_OPERATING_BATTERY_LEVEL}%), "
-            f"xe đã chuyển sang CHARGING và gửi yêu cầu sạc {charging_request['request_id']} sang SUB-04."
-        )
+        if vehicle.get("incident_blocked"):
+            vehicle["status"] = VEHICLE_UNAVAILABLE
+            result_status = "RETURNED_FAULTY_AND_LOW_BATTERY"
+            extra_msg = (
+                f" Xe {vehicle['vehicle_id']} đã chuyển sang UNAVAILABLE do có sự cố, đồng thời ghi nhận "
+                f"nhu cầu sạc {charging_request['request_id']} (pin {final_battery}%) tại SUB-04."
+            )
+        else:
+            vehicle["status"] = VEHICLE_CHARGING
+            result_status = "BATTERY_CRITICAL_ROUTED_TO_CHARGING"
+            extra_msg = (
+                f" Pin còn {final_battery}% (< {MIN_OPERATING_BATTERY_LEVEL}%), "
+                f"xe đã chuyển sang CHARGING và gửi yêu cầu sạc {charging_request['request_id']} sang SUB-04."
+            )
     else:
-        vehicle["status"] = VEHICLE_AVAILABLE
-        result_status = "SUCCESS"
-        extra_msg = f" Xe {vehicle['vehicle_id']} đã sẵn sàng (AVAILABLE) tại {dest_hub['name']}."
+        vehicle["status"] = VEHICLE_UNAVAILABLE if vehicle.get("incident_blocked") else VEHICLE_AVAILABLE
+        result_status = "RETURNED_FAULTY" if vehicle.get("incident_blocked") else "SUCCESS"
+        extra_msg = f" Xe {vehicle['vehicle_id']} đỗ tại ô {spaces[0]['space_id']} ({dest_hub['name']}) · {vehicle['status']}."
 
     trip["destination_hub_id"] = destination_hub_id
+    trip["returned_space_id"] = spaces[0]["space_id"]
     trip["end_time"] = now_iso
     trip["end_battery_level"] = int(final_battery)
     trip["is_active"] = False
@@ -306,6 +377,7 @@ def return_vehicle(
     }
 
 
+@atomic
 def report_defective_vehicle_at_return(
     state: dict[str, Any],
     student_id: str,
@@ -327,10 +399,12 @@ def report_defective_vehicle_at_return(
     if vehicle is None:
         return {"ok": False, "message": "Không tìm thấy phương tiện."}
 
-    vehicle["status"] = VEHICLE_UNAVAILABLE
     inc_msg = _notify_sub05_incident(
-        vehicle["vehicle_id"], f"[Return] {issue_desc}", reported_by=student_id
+        vehicle["vehicle_id"], f"[Sau trả xe] {issue_desc}", reported_by=student_id
     )
+    vehicle["incident_blocked"] = True
+    if vehicle["status"] != VEHICLE_IN_USE:
+        vehicle["status"] = VEHICLE_UNAVAILABLE
     return {
         "ok": True,
         "message": f"Đã ghi nhận xe {vehicle['vehicle_id']} hỏng (UNAVAILABLE). {inc_msg}".strip(),
@@ -338,10 +412,13 @@ def report_defective_vehicle_at_return(
 
 
 # ---------------------------------------------------------------------------
-# Cross-SUB Contract for SUB-05 (Redistribution)
+# Cross-SUB Contract for SUB-05 (Redistribution) & SUB-04 (Charging Finish)
 # ---------------------------------------------------------------------------
 
-def relocate_vehicle(vehicle_id: str, target_hub_id: str) -> dict[str, Any]:
+@atomic
+def relocate_vehicle(
+    vehicle_id: str, target_hub_id: str, order_id=None, space_id=None
+) -> dict[str, Any]:
     """Move an AVAILABLE vehicle to another Hub (called by SUB-05 dispatch)."""
     state = get_state()
     vehicle = _find_vehicle(state, vehicle_id)
@@ -349,11 +426,53 @@ def relocate_vehicle(vehicle_id: str, target_hub_id: str) -> dict[str, Any]:
         return {"ok": False, "message": f"Không tìm thấy xe {vehicle_id}."}
     if _find_hub(state, target_hub_id) is None:
         return {"ok": False, "message": f"Không tìm thấy Hub đích {target_hub_id}."}
-    if vehicle["status"] != VEHICLE_AVAILABLE:
+    if vehicle["status"] != VEHICLE_AVAILABLE or vehicle.get("incident_blocked"):
         return {
             "ok": False,
             "message": f"Xe {vehicle_id} đang ở trạng thái {vehicle['status']}, không thể điều chuyển.",
         }
 
+    spaces = free_spaces(state, target_hub_id, order_id)
+    if space_id:
+        spaces = [p for p in spaces if p["space_id"] == space_id]
+    if not spaces:
+        return {"ok": False, "message": "Hub đích hết chỗ."}
+    release_vehicle_space(state, vehicle_id)
+    spaces[0].update(status="IN_USE", vehicle_id=vehicle_id)
     vehicle["hub_id"] = target_hub_id
     return {"ok": True, "message": f"Đã chuyển xe {vehicle_id} sang {target_hub_id}."}
+
+
+@atomic
+def finish_vehicle_charging(state: dict[str, Any], vehicle_id: str, battery: int) -> None:
+    vehicle = _find_vehicle(state, vehicle_id)
+    if vehicle is None or vehicle["status"] == VEHICLE_IN_USE:
+        raise ValueError("Xe không thể kết thúc sạc tại thời điểm này.")
+    vehicle["battery_level"] = int(battery)
+    if vehicle.get("incident_blocked"):
+        vehicle["status"] = VEHICLE_UNAVAILABLE
+    elif vehicle["battery_level"] < MIN_OPERATING_BATTERY_LEVEL:
+        vehicle["status"] = VEHICLE_CHARGING
+    else:
+        vehicle["status"] = VEHICLE_AVAILABLE
+
+
+@atomic
+def report_trip_incident(
+    state: dict[str, Any],
+    student_id: str,
+    trip_id: str,
+    description: str,
+    severity: str = "MEDIUM",
+) -> dict[str, Any]:
+    trip = get_active_trip(state, student_id)
+    if not trip or trip["trip_id"] != trip_id or not (description or "").strip():
+        return {"ok": False, "message": "Cần chuyến đi đang hoạt động và mô tả sự cố."}
+    from modules.sub05.service import create_or_update_incident
+
+    return create_or_update_incident(
+        trip["vehicle_id"],
+        f"[Giữa hành trình {trip_id}] {description.strip()}",
+        severity=severity,
+        reported_by=student_id,
+    )

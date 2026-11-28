@@ -6,12 +6,20 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from shared import enums
-from shared.state import get_state
-
+from shared.state import (
+    atomic,
+    available_vehicle,
+    free_spaces,
+    get_state,
+    hub_validity,
+    point_validity,
+    record_audit_log,
+)
 
 NEAR_CAPACITY_FREE_RATIO = 0.20
 STALE_AFTER_MINUTES = 30
 DISPATCH_TRAVEL_MINUTES = 15
+MIN_OPERATING_BATTERY = 20
 
 DISPATCH_TRANSITING = "TRANSITING"
 DISPATCH_COMPLETED = "COMPLETED"
@@ -30,20 +38,25 @@ VEHICLE_TYPE_LABELS = {
     "ELECTRIC_MOTORCYCLE": "Xe máy điện",
 }
 
-_CLOSED_SCHEDULE_STATUSES = ("CANCELLED", "COMPLETED", "REJECTED")
+_CLOSED_SCHEDULE_STATUSES = ("CANCELLED", "COMPLETED", "REJECTED", "EXPIRED", "INTERRUPTED")
 
 
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
 
+def _now_dt() -> datetime:
+    return datetime.now().astimezone()
+
+
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return _now_dt().isoformat(timespec="seconds")
 
 
 def _parse(value: Any) -> datetime | None:
     try:
-        return datetime.fromisoformat(str(value))
+        dt = datetime.fromisoformat(str(value))
+        return dt.astimezone() if dt.tzinfo else dt.replace(tzinfo=_now_dt().tzinfo)
     except (TypeError, ValueError):
         return None
 
@@ -60,13 +73,13 @@ def _count(items: list[dict[str, Any]], status: str) -> int:
     return sum(1 for item in items if item["status"] == status)
 
 
-def _metric(free: int, total: int) -> dict[str, Any]:
+def _metric(free: int, total: int, reliable: bool = True) -> dict[str, Any]:
     pct = round(free / total * 100) if total else 0
     return {
         "free": free,
         "total": total,
         "pct": pct,
-        "near": total > 0 and free / total <= NEAR_CAPACITY_FREE_RATIO,
+        "near": reliable and total > 0 and (free / total) <= NEAR_CAPACITY_FREE_RATIO,
     }
 
 
@@ -78,14 +91,27 @@ def _refresh_reservations() -> None:
         expire = getattr(sub01_service, "expire_pending_reservations", None)
         if callable(expire):
             expire(get_state())
-    except Exception:  # never let a SUB-01 problem break SUB-05 screens
+    except Exception:
         pass
 
 
-def refresh() -> None:
+def refresh(operator_id: str | None = None) -> None:
     """Call when a SUB-05 screen opens: expire reservations, finish due orders."""
+    from modules.sub04.service import expire_unused_schedules
+
     _refresh_reservations()
+    expire_unused_schedules(get_state())
     complete_due_dispatch_orders()
+    if operator_id:
+        state = get_state()
+        logs = state.setdefault("audit_logs", [])
+        if not logs or logs[-1].get("action") != "MONITOR_DASHBOARD" or logs[-1].get("actor") != operator_id:
+            record_audit_log(state, operator_id, "MONITOR_DASHBOARD", "Truy cập bảng điều khiển giám sát mạng lưới (UC-11)")
+
+
+def get_audit_logs(limit: int = 40) -> list[dict[str, Any]]:
+    logs = get_state().get("audit_logs", [])
+    return list(reversed(logs[-limit:]))
 
 
 def _point_label(point_id: str) -> str:
@@ -115,7 +141,7 @@ def eta_minutes_left(order: dict[str, Any]) -> int:
     eta = _parse(order.get("eta"))
     if eta is None:
         return 0
-    return max(0, int((eta - datetime.now()).total_seconds() // 60))
+    return max(0, int((eta - _now_dt()).total_seconds() // 60))
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +151,7 @@ def eta_minutes_left(order: dict[str, Any]) -> int:
 def _hub_rows() -> list[dict[str, Any]]:
     state = get_state()
     in_transit = _transit_vehicle_ids()
-    now = datetime.now()
+    now = _now_dt()
     rows: list[dict[str, Any]] = []
     for hub in state["hubs"]:
         hid = hub["hub_id"]
@@ -133,23 +159,36 @@ def _hub_rows() -> list[dict[str, Any]]:
         spaces = [p for p in state["parking_spaces"] if p["hub_id"] == hid]
         points = [c for c in state["charging_points"] if c["hub_id"] == hid]
 
-        available = [v for v in vehicles if v["status"] == enums.VEHICLE_AVAILABLE]
-        transiting = sum(1 for v in available if v["vehicle_id"] in in_transit)
-        pool = len(available) - transiting
+        healthy_avail = [
+            v
+            for v in vehicles
+            if v["status"] == enums.VEHICLE_AVAILABLE and not v.get("incident_blocked")
+        ]
+        transiting = sum(1 for v in healthy_avail if v["vehicle_id"] in in_transit)
+        pool = len(healthy_avail) - transiting
         held = max(0, min(int(hub.get("reserved_slot_count", 0)), pool))
         free = pool - held
 
+        validity = hub_validity(state, hub, now)
+        reliable = validity == "VALID"
+        free_chargers = sum(
+            1
+            for c in points
+            if c["status"] == enums.CHARGING_POINT_AVAILABLE
+            and not c.get("incident_blocked")
+            and point_validity(c, now) == "VALID"
+        )
+
         metrics = {
-            "vehicles": _metric(free, len(vehicles)),
-            "parking": _metric(_count(spaces, enums.PARKING_AVAILABLE), len(spaces)),
-            "charging": _metric(
-                _count(points, enums.CHARGING_POINT_AVAILABLE), len(points)
-            ),
+            "vehicles": _metric(free, len(vehicles), reliable=reliable),
+            "parking": _metric(len(free_spaces(state, hid)), len(spaces), reliable=reliable),
+            "charging": _metric(free_chargers, len(points), reliable=reliable),
         }
         flags = [key for key, m in metrics.items() if m["near"]]
-        updated = _parse(hub.get("data_updated_at"))
-        stale = bool(
-            updated and now - updated > timedelta(minutes=STALE_AFTER_MINUTES)
+        unavailable_veh = sum(
+            1
+            for v in vehicles
+            if v["status"] == enums.VEHICLE_UNAVAILABLE or v.get("incident_blocked")
         )
         rows.append(
             {
@@ -159,26 +198,21 @@ def _hub_rows() -> list[dict[str, Any]]:
                 **metrics,
                 "near_flags": flags,
                 "near": bool(flags),
-                "stale": stale,
+                "stale": not reliable,
+                "data_validity": validity,
+                "data_updated_at": hub.get("data_updated_at"),
                 "counts": {
                     "total": len(vehicles),
                     "free": free,
                     "in_use": _count(vehicles, enums.VEHICLE_IN_USE),
                     "charging": _count(vehicles, enums.VEHICLE_CHARGING),
-                    "unavailable": _count(vehicles, enums.VEHICLE_UNAVAILABLE),
+                    "unavailable": unavailable_veh,
                     "held": held,
                     "transiting": transiting,
                 },
             }
         )
     return rows
-
-
-_FLAG_TEXT = {
-    "vehicles": "xe",
-    "parking": "chỗ đỗ",
-    "charging": "cổng sạc",
-}
 
 
 def _capacity_detail(row: dict[str, Any]) -> str:
@@ -195,7 +229,8 @@ def _capacity_detail(row: dict[str, Any]) -> str:
 
 
 def get_network_dashboard() -> dict[str, Any]:
-    """Overview of the whole network (read-only)."""
+    """Overview of the whole network (UC-11 & UC-12)."""
+    state = get_state()
     rows = _hub_rows()
     totals = {
         key: sum(r["counts"][key] for r in rows)
@@ -203,17 +238,46 @@ def get_network_dashboard() -> dict[str, Any]:
     }
     incidents = get_incident_views()
     alerts: list[dict[str, Any]] = []
+    active_alert_keys: set[str] = set()
+    logged_keys: set[str] = state.setdefault("_logged_capacity_alerts", set())
+
     for r in rows:
-        if r["near"]:
+        if r["stale"]:
+            mode_vi = "mất kết nối (DISCONNECTED)" if r["data_validity"] == "DISCONNECTED" else "dữ liệu trễ (STALE)"
+            alerts.append(
+                {
+                    "kind": "stale",
+                    "hub_id": r["hub_id"],
+                    "hub_name": r["name"],
+                    "detail": f"đang {mode_vi}; tạm ngưng đánh giá ngưỡng Near Capacity tự động (UC-12).",
+                    "action": "hub",
+                }
+            )
+        elif r["near"]:
+            detail = _capacity_detail(r)
+            alert_key = f"{r['hub_id']}:{','.join(r['near_flags'])}"
+            active_alert_keys.add(alert_key)
+            if alert_key not in logged_keys:
+                logged_keys.add(alert_key)
+                record_audit_log(
+                    state,
+                    "SYSTEM",
+                    "NEAR_CAPACITY_ALERT",
+                    f"{r['name']} {detail}",
+                    r["hub_id"],
+                )
             alerts.append(
                 {
                     "kind": "capacity",
                     "hub_id": r["hub_id"],
                     "hub_name": r["name"],
-                    "detail": _capacity_detail(r),
+                    "detail": detail,
                     "action": "dispatch",
                 }
             )
+    # Remove resolved alert keys so re-crossing threshold logs cleanly
+    logged_keys.intersection_update(active_alert_keys)
+
     for inc in incidents:
         if inc["severity"] == SEVERITY_HIGH:
             alerts.append(
@@ -237,13 +301,15 @@ def get_network_dashboard() -> dict[str, Any]:
 
 
 def identify_near_capacity_hubs(threshold: float | None = None) -> list[dict[str, Any]]:
-    """Hubs having a resource whose free share is <= ``threshold`` (0-1)."""
+    """Hubs having a reliable resource whose free share is <= ``threshold`` (0-1)."""
     if threshold is None:
         threshold = NEAR_CAPACITY_FREE_RATIO
     if not 0 <= threshold < 1:
         raise ValueError("threshold must be at least 0 and below 1")
     result = []
     for r in _hub_rows():
+        if r["stale"]:
+            continue
         flags = [
             key
             for key in ("vehicles", "parking", "charging")
@@ -261,17 +327,24 @@ def get_hub_detail(hub_id: str) -> dict[str, Any] | None:
         return None
     state = get_state()
     in_transit = _transit_vehicle_ids()
+    space_by_veh = {
+        p["vehicle_id"]: p["space_id"]
+        for p in state["parking_spaces"]
+        if p.get("hub_id") == hub_id and p.get("vehicle_id")
+    }
 
     rank = {"AVAILABLE": 0, "TRANSITING": 1, "CHARGING": 2, "IN_USE": 3, "UNAVAILABLE": 4}
     vehicles = []
     for v in state["vehicles"]:
         if v["hub_id"] != hub_id:
             continue
-        status = (
-            "TRANSITING"
-            if v["status"] == enums.VEHICLE_AVAILABLE and v["vehicle_id"] in in_transit
-            else v["status"]
-        )
+        if v["status"] == enums.VEHICLE_AVAILABLE and v.get("incident_blocked"):
+            status = "UNAVAILABLE"
+        elif v["status"] == enums.VEHICLE_AVAILABLE and v["vehicle_id"] in in_transit:
+            status = "TRANSITING"
+        else:
+            status = v["status"]
+        stall = space_by_veh.get(v["vehicle_id"])
         vehicles.append(
             {
                 "vehicle_id": v["vehicle_id"],
@@ -279,9 +352,9 @@ def get_hub_detail(hub_id: str) -> dict[str, Any] | None:
                 "battery_level": v["battery_level"],
                 "status": status,
                 "location": {
-                    "AVAILABLE": "Bãi xe Hub",
+                    "AVAILABLE": stall or "Bãi xe Hub",
                     "TRANSITING": "Chờ điều chuyển",
-                    "CHARGING": "Trụ sạc",
+                    "CHARGING": "Khu vực sạc",
                     "IN_USE": "Đang di chuyển",
                     "UNAVAILABLE": "Khu bảo trì",
                 }.get(status, "-"),
@@ -290,8 +363,16 @@ def get_hub_detail(hub_id: str) -> dict[str, Any] | None:
     vehicles.sort(key=lambda v: (rank.get(v["status"], 9), -v["battery_level"]))
 
     points = [
-        {"point_id": c["charging_point_id"], "label": _point_label(c["charging_point_id"]),
-         "status": c["status"]}
+        {
+            "point_id": c["charging_point_id"],
+            "label": _point_label(c["charging_point_id"]),
+            "power_kw": c.get("power_kw", 0),
+            "status": (
+                point_validity(c)
+                if point_validity(c) != "VALID"
+                else ("UNAVAILABLE" if c.get("incident_blocked") else c["status"])
+            ),
+        }
         for c in state["charging_points"]
         if c["hub_id"] == hub_id
     ]
@@ -318,38 +399,40 @@ def get_hub_detail(hub_id: str) -> dict[str, Any] | None:
 def get_receiving_capacity(hub_id: str) -> dict[str, int]:
     """Free parking spaces of a Hub minus vehicles already on their way to it."""
     state = get_state()
-    free = sum(
-        1
-        for p in state["parking_spaces"]
-        if p["hub_id"] == hub_id and p["status"] == enums.PARKING_AVAILABLE
-    )
+    free = len(free_spaces(state, hub_id))
     incoming = sum(
         len(o["vehicle_ids"])
         for o in state["dispatch_orders"]
         if o["status"] == DISPATCH_TRANSITING and o["target_hub_id"] == hub_id
     )
-    return {"free_spaces": free, "incoming": incoming, "can_receive": max(0, free - incoming)}
+    legacy = sum(
+        len(o["vehicle_ids"])
+        for o in state["dispatch_orders"]
+        if o["target_hub_id"] == hub_id
+        and o["status"] == DISPATCH_TRANSITING
+        and not o.get("space_ids")
+    )
+    return {
+        "free_spaces": free + incoming - legacy,
+        "incoming": incoming,
+        "can_receive": max(0, free - legacy),
+    }
 
 
 def get_transferable_vehicles(source_hub_id: str) -> dict[str, Any]:
-    """Vehicles that may leave ``source_hub_id`` (read-only).
-
-    Candidates are AVAILABLE vehicles at the Hub that are not already in a
-    TRANSITING order. A reservation is tied to a Hub slot, not to a vehicle,
-    so ``max_transferable = candidates - reserved_slot_count``.
-    """
+    """Vehicles that may leave ``source_hub_id`` (read-only)."""
     _refresh_reservations()
+    state = get_state()
     hub = _hub_by_id(source_hub_id)
     if hub is None:
         return {"vehicles": [], "by_type": {}, "held_for_reservations": 0, "max_transferable": 0}
 
-    in_transit = _transit_vehicle_ids()
     candidates = [
         v
-        for v in get_state()["vehicles"]
+        for v in state["vehicles"]
         if v["hub_id"] == source_hub_id
-        and v["status"] == enums.VEHICLE_AVAILABLE
-        and v["vehicle_id"] not in in_transit
+        and available_vehicle(state, v)
+        and v.get("battery_level", 0) >= MIN_OPERATING_BATTERY
     ]
     candidates.sort(key=lambda v: v["battery_level"], reverse=True)
     by_type: dict[str, int] = {}
@@ -379,7 +462,7 @@ def _select_vehicles(
         pool = [v for v in info["vehicles"] if v["vehicle_type"] == vtype]
         if qty > len(pool):
             label = VEHICLE_TYPE_LABELS.get(vtype, vtype)
-            return [], f"Chỉ có {len(pool)} {label.lower()} khả dụng tại Hub nguồn."
+            return [], f"Số lượng vượt quá {len(pool)} {label.lower()} khả dụng tại Hub nguồn."
         chosen.extend(v["vehicle_id"] for v in pool[:qty])
     return chosen, None
 
@@ -399,6 +482,8 @@ def _validate_dispatch(
         return "Không tìm thấy Hub nguồn."
     if target is None:
         return "Không tìm thấy Hub đích."
+    if any(hub.get("data_validity") == "DISCONNECTED" for hub in (source, target)):
+        return "Hub nguồn hoặc Hub đích đang mất kết nối. Hãy cập nhật trạng thái trước khi điều chuyển."
     if source_hub_id == target_hub_id:
         return "Hub nguồn và Hub đích phải khác nhau."
     if not vehicle_ids:
@@ -415,8 +500,10 @@ def _validate_dispatch(
             problems.append(f"{vid} (không tồn tại)")
         elif vehicle["hub_id"] != source_hub_id:
             problems.append(f"{vid} (không ở Hub nguồn)")
-        elif vehicle["status"] != enums.VEHICLE_AVAILABLE:
+        elif vehicle["status"] != enums.VEHICLE_AVAILABLE or vehicle.get("incident_blocked"):
             problems.append(f"{vid} ({vehicle['status']})")
+        elif vehicle.get("battery_level", 0) < MIN_OPERATING_BATTERY:
+            problems.append(f"{vid} (pin thấp {vehicle.get('battery_level')}%)")
         elif vid in in_transit:
             problems.append(f"{vid} (đang trong lệnh điều chuyển khác)")
     if problems:
@@ -424,36 +511,42 @@ def _validate_dispatch(
     if not check_limits:
         return None
 
-    # Do not take vehicles that serve active reservations.
     pool = [
         v
         for v in state["vehicles"]
         if v["hub_id"] == source_hub_id
         and v["status"] == enums.VEHICLE_AVAILABLE
+        and not v.get("incident_blocked")
+        and v.get("battery_level", 0) >= MIN_OPERATING_BATTERY
         and v["vehicle_id"] not in in_transit
     ]
     held = int(source.get("reserved_slot_count", 0))
     movable = max(0, len(pool) - held)
     if len(vehicle_ids) > movable:
         return (
-            f"{source['name']} chỉ có thể xuất tối đa {movable} xe: "
-            f"{held} xe đang được giữ cho các lượt đặt trước."
+            f"Số xe khả dụng tại {source['name']} chỉ có thể xuất tối đa {movable} xe "
+            f"({held} xe đang được giữ cho các lượt đặt trước)."
         )
 
-    # The target Hub must have room for the vehicles.
     cap = get_receiving_capacity(target_hub_id)
-    if exclude_order_id:
-        order = _find_order(exclude_order_id)
-        if order and order["target_hub_id"] == target_hub_id:
-            cap["can_receive"] += len(order["vehicle_ids"])
+    order = _find_order(exclude_order_id) if exclude_order_id else None
+    if order and order["target_hub_id"] == target_hub_id:
+        cap["can_receive"] = max(
+            0, cap["free_spaces"] - cap["incoming"] + len(order["vehicle_ids"])
+        )
+    if order and order.get("space_ids"):
+        usable = {p["space_id"] for p in free_spaces(state, target_hub_id, exclude_order_id)}
+        if not usable.issuperset(order["space_ids"]):
+            return "Chỗ tiếp nhận tại Hub đích đã bị khóa hoặc không còn trống."
     if len(vehicle_ids) > cap["can_receive"]:
         return (
-            f"{target['name']} chỉ còn chỗ nhận {cap['can_receive']} xe "
-            f"({cap['free_spaces']} chỗ đỗ trống, {cap['incoming']} xe đang trên đường tới)."
+            f"Số lượng vượt quá {cap['can_receive']} chỗ trống có thể tiếp nhận tại {target['name']} "
+            f"({cap['free_spaces']} chỗ trống vật lý, {cap['incoming']} xe đang trên đường tới)."
         )
     return None
 
 
+@atomic
 def create_dispatch_order(
     source_hub_id: str,
     target_hub_id: str,
@@ -461,12 +554,7 @@ def create_dispatch_order(
     quantities: dict[str, int] | None = None,
     created_by: str | None = None,
 ) -> dict[str, Any]:
-    """Validate and record a TRANSITING dispatch order.
-
-    Pass either ``vehicle_ids`` or ``quantities`` (``{vehicle_type: count}``;
-    the highest-battery eligible vehicles are picked). Vehicles are moved
-    when the order is completed.
-    """
+    """Validate and record a TRANSITING dispatch order (UC-13)."""
     _refresh_reservations()
     if vehicle_ids is None:
         vehicle_ids, error = _select_vehicles(source_hub_id, quantities or {})
@@ -487,12 +575,14 @@ def create_dispatch_order(
 
     number = state["next_dispatch_number"]
     state["next_dispatch_number"] = number + 1
-    now = datetime.now()
+    now = _now_dt()
+    reserved_spaces = [p["space_id"] for p in free_spaces(state, target_hub_id)[: len(vehicle_ids)]]
     order = {
         "order_id": f"DSP-{number:03d}",
         "source_hub_id": source_hub_id,
         "target_hub_id": target_hub_id,
         "vehicle_ids": vehicle_ids,
+        "space_ids": reserved_spaces,
         "quantities": counts,
         "status": DISPATCH_TRANSITING,
         "created_by": created_by,
@@ -501,82 +591,80 @@ def create_dispatch_order(
         "completed_at": None,
     }
     state["dispatch_orders"].append(order)
+    record_audit_log(
+        state,
+        created_by or "Operator",
+        "CREATE_DISPATCH",
+        f"Tạo lệnh {order['order_id']}: chuyển {len(vehicle_ids)} xe từ {source_hub_id} sang {target_hub_id} (giữ ô {', '.join(reserved_spaces)})",
+        target_hub_id,
+    )
     return _result(
         True,
-        f"Đã tạo lệnh {order['order_id']}: điều chuyển {len(vehicle_ids)} xe.",
+        f"Đã tạo lệnh {order['order_id']}: điều chuyển {len(vehicle_ids)} xe sang {target_hub_id}.",
         order=order,
     )
 
 
-def _relocate_vehicle(vehicle_id: str, target_hub_id: str) -> tuple[bool, str]:
-    """Move one vehicle to another Hub through its owner (SUB-02) if possible.
-
-    TODO (agree with M2): SUB-02 should expose
-    ``relocate_vehicle(vehicle_id, target_hub_id)``. Until it exists, the
-    fallback below updates ``hub_id`` directly so the demo still works.
-    """
-    try:
-        from modules.sub02 import service as sub02_service
-
-        relocate = getattr(sub02_service, "relocate_vehicle", None)
-    except Exception:
-        relocate = None
-
-    if callable(relocate):
-        outcome = relocate(vehicle_id, target_hub_id)
-        if isinstance(outcome, dict):
-            return bool(outcome.get("ok", True)), str(outcome.get("message", ""))
-        if isinstance(outcome, tuple) and outcome:
-            return bool(outcome[0]), str(outcome[1]) if len(outcome) > 1 else ""
-        return outcome is not False, ""
-
-    for vehicle in get_state()["vehicles"]:
-        if vehicle["vehicle_id"] == vehicle_id:
-            vehicle["hub_id"] = target_hub_id
-            return True, ""
-    return False, "không tìm thấy xe"
-
-
+@atomic
 def complete_dispatch_order(order_id: str) -> dict[str, Any]:
     """Confirm arrival: move the vehicles of a TRANSITING order."""
     order = _find_order(order_id)
     if order is None:
         return _result(False, f"Không tìm thấy lệnh {order_id}.")
+    if order["status"] == DISPATCH_COMPLETED:
+        return _result(True, f"Lệnh {order_id} đã hoàn tất trước đó.", order=order)
     if order["status"] != DISPATCH_TRANSITING:
-        return _result(False, f"Lệnh {order_id} đã ở trạng thái {order['status']}.")
+        return _result(False, f"Lệnh {order_id} đang ở trạng thái {order['status']}.")
 
     error = _validate_dispatch(
         order["source_hub_id"],
         order["target_hub_id"],
         order["vehicle_ids"],
         exclude_order_id=order_id,
-        check_limits=False,  # limits were checked when the order was created
+        check_limits=True,
     )
     if error:
         return _result(False, f"Không thể hoàn tất {order_id}: {error}")
 
     moved: list[str] = []
-    for vehicle_id in order["vehicle_ids"]:
-        ok, message = _relocate_vehicle(vehicle_id, order["target_hub_id"])
-        if not ok:
+    from modules.sub02.service import relocate_vehicle
+
+    for index, vehicle_id in enumerate(order["vehicle_ids"]):
+        spaces = order.get("space_ids", [])
+        result = relocate_vehicle(
+            vehicle_id,
+            order["target_hub_id"],
+            order_id,
+            spaces[index] if index < len(spaces) else None,
+        )
+        if not result["ok"]:
             return _result(
                 False,
-                f"Không thể chuyển xe {vehicle_id}: {message}. "
+                f"Không thể chuyển xe {vehicle_id}: {result['message']}. "
                 f"Đã chuyển: {', '.join(moved) or 'chưa có xe nào'}.",
             )
         moved.append(vehicle_id)
 
     order["status"] = DISPATCH_COMPLETED
     order["completed_at"] = _now()
+    record_audit_log(
+        get_state(),
+        order.get("created_by") or "Operator",
+        "COMPLETE_DISPATCH",
+        f"Hoàn tất lệnh {order_id}: {len(moved)} xe đã tới {order['target_hub_id']}",
+        order["target_hub_id"],
+    )
     return _result(
-        True, f"Lệnh {order_id} hoàn thành: {len(moved)} xe đã tới Hub đích.", order=order
+        True,
+        f"Lệnh {order_id} hoàn thành: {len(moved)} xe đã tới Hub đích.",
+        order=order,
     )
 
 
 def complete_due_dispatch_orders() -> int:
     """Complete TRANSITING orders whose ETA has passed. Returns how many."""
     done = 0
-    now = datetime.now()
+    now = _now_dt()
     for order in list(get_state()["dispatch_orders"]):
         eta = _parse(order.get("eta"))
         if order["status"] == DISPATCH_TRANSITING and eta is not None and eta <= now:
@@ -585,15 +673,25 @@ def complete_due_dispatch_orders() -> int:
     return done
 
 
+@atomic
 def cancel_dispatch_order(order_id: str) -> dict[str, Any]:
     order = _find_order(order_id)
     if order is None:
         return _result(False, f"Không tìm thấy lệnh {order_id}.")
+    if order["status"] == DISPATCH_CANCELLED:
+        return _result(True, f"Lệnh {order_id} đã được hủy trước đó.", order=order)
     if order["status"] != DISPATCH_TRANSITING:
         return _result(False, f"Chỉ hủy được lệnh đang TRANSITING (lệnh này là {order['status']}).")
     order["status"] = DISPATCH_CANCELLED
     order["completed_at"] = _now()
-    return _result(True, f"Đã hủy lệnh {order_id}.", order=order)
+    record_audit_log(
+        get_state(),
+        order.get("created_by") or "Operator",
+        "CANCEL_DISPATCH",
+        f"Hủy lệnh {order_id} và giải phóng chỗ giữ tại {order['target_hub_id']}",
+        order["target_hub_id"],
+    )
+    return _result(True, f"Đã hủy lệnh {order_id} và giải phóng các ô giữ trước.", order=order)
 
 
 def get_dispatch_orders(status: str | None = None) -> list[dict[str, Any]]:
@@ -612,23 +710,44 @@ def _resource_info(resource_id: str) -> dict[str, Any] | None:
     hub_names = {h["hub_id"]: h["name"] for h in state["hubs"]}
     for h in state["hubs"]:
         if h["hub_id"] == resource_id:
-            return {"resource_id": resource_id, "resource_type": "HUB", "hub_id": resource_id,
-                    "hub_name": h["name"], "label": h["name"], "status": None}
+            return {
+                "resource_id": resource_id,
+                "resource_type": "HUB",
+                "hub_id": resource_id,
+                "hub_name": h["name"],
+                "label": h["name"],
+                "status": h.get("data_validity", "VALID"),
+            }
     for v in state["vehicles"]:
         if v["vehicle_id"] == resource_id:
-            return {"resource_id": resource_id, "resource_type": "VEHICLE", "hub_id": v["hub_id"],
-                    "hub_name": hub_names.get(v["hub_id"], v["hub_id"]),
-                    "label": f"Xe {resource_id}", "status": v["status"]}
+            return {
+                "resource_id": resource_id,
+                "resource_type": "VEHICLE",
+                "hub_id": v["hub_id"],
+                "hub_name": hub_names.get(v["hub_id"], v["hub_id"]),
+                "label": f"Xe {resource_id}",
+                "status": v["status"],
+            }
     for p in state["parking_spaces"]:
         if p["space_id"] == resource_id:
-            return {"resource_id": resource_id, "resource_type": "PARKING_SPACE", "hub_id": p["hub_id"],
-                    "hub_name": hub_names.get(p["hub_id"], p["hub_id"]),
-                    "label": f"Chỗ đỗ {resource_id}", "status": p["status"]}
+            return {
+                "resource_id": resource_id,
+                "resource_type": "PARKING_SPACE",
+                "hub_id": p["hub_id"],
+                "hub_name": hub_names.get(p["hub_id"], p["hub_id"]),
+                "label": f"Chỗ đỗ {resource_id}",
+                "status": p["status"],
+            }
     for c in state["charging_points"]:
         if c["charging_point_id"] == resource_id:
-            return {"resource_id": resource_id, "resource_type": "CHARGING_POINT", "hub_id": c["hub_id"],
-                    "hub_name": hub_names.get(c["hub_id"], c["hub_id"]),
-                    "label": _point_label(resource_id), "status": c["status"]}
+            return {
+                "resource_id": resource_id,
+                "resource_type": "CHARGING_POINT",
+                "hub_id": c["hub_id"],
+                "hub_name": hub_names.get(c["hub_id"], c["hub_id"]),
+                "label": _point_label(resource_id),
+                "status": c["status"],
+            }
     return None
 
 
@@ -656,34 +775,78 @@ def list_resources() -> list[dict[str, str]]:
     return items
 
 
-def _impact_and_action(info: dict[str, Any]) -> tuple[str, dict[str, str]]:
-    """Business impact text and the suggested next action of an incident."""
+def _impact_and_action(info: dict[str, Any]) -> tuple[str, dict[str, str], list[str]]:
+    """Business impact text, suggested next action, and affected commitment IDs (FR-05-17)."""
     state = get_state()
     rtype, status = info["resource_type"], info["status"]
+    hub_id = info["hub_id"]
+    affected_ids: list[str] = []
+
     if rtype == "CHARGING_POINT":
-        n = sum(
-            1
+        active_scheds = [
+            s["schedule_id"]
             for s in state["charging_schedules"]
             if s.get("charging_point_id") == info["resource_id"]
-            and s.get("status") not in _CLOSED_SCHEDULE_STATUSES
-        )
-        if n:
-            impact = f"Ảnh hưởng {n} lịch sạc"
+            and s.get("status") in ("CONFIRMED", "IN_USE")
+        ]
+        draft_scheds = [
+            s["schedule_id"]
+            for s in state["charging_schedules"]
+            if s.get("charging_point_id") == info["resource_id"]
+            and s.get("status") == "PROPOSED"
+        ]
+        affected_ids.extend(active_scheds)
+        if active_scheds:
+            impact = f"Ảnh hưởng {len(active_scheds)} lịch sạc: {', '.join(active_scheds)}"
+        elif draft_scheds:
+            impact = f"Ảnh hưởng {len(draft_scheds)} đề xuất ({', '.join(draft_scheds)})"
         elif status == enums.CHARGING_POINT_UNAVAILABLE:
             impact = "Giảm 1 cổng sạc khả dụng"
         else:
-            impact = "Chưa ảnh hưởng vận hành"
-        return impact, {"label": "Lập lịch sạc", "target": "other:Lập lịch sạc"}
+            impact = "Chưa ảnh hưởng lịch đã xác nhận"
+        return impact, {"label": "Lập lịch sạc", "target": "other:Lập lịch sạc"}, affected_ids
+
     if rtype == "VEHICLE":
-        if status == enums.VEHICLE_UNAVAILABLE:
-            return "Thiếu hụt 1 xe", {"label": "Điều chuyển xe", "target": "dispatch"}
-        if status == enums.VEHICLE_IN_USE:
-            return "Chờ kết thúc chuyến", {"label": "Tổng quan mạng lưới", "target": "overview"}
-        return "Chưa ảnh hưởng vận hành", {"label": "Tổng quan mạng lưới", "target": "overview"}
+        pending_res = [
+            r["reservation_id"]
+            for r in state["reservations"]
+            if r.get("hub_id") == hub_id and r.get("status") == "PENDING"
+        ]
+        healthy_avail = sum(
+            1 for v in state["vehicles"] if v["hub_id"] == hub_id and available_vehicle(state, v)
+        )
+        if pending_res and healthy_avail < len(pending_res):
+            affected_ids.extend(pending_res)
+            impact = f"Thiếu xe cho đặt trước: {', '.join(pending_res)}"
+        elif status == enums.VEHICLE_UNAVAILABLE:
+            impact = "Thiếu hụt 1 xe khả dụng"
+        elif status == enums.VEHICLE_IN_USE:
+            impact = "Đang có khách thuê · Chờ hết chuyến / Dừng khẩn"
+        else:
+            impact = "Đã chặn cấp phát mới"
+        return impact, {"label": "Điều chuyển xe", "target": "dispatch"}, affected_ids
+
     if rtype == "PARKING_SPACE":
-        impact = "Giảm 1 chỗ đỗ" if status == enums.PARKING_UNAVAILABLE else "Chưa ảnh hưởng vận hành"
-        return impact, {"label": "Tổng quan mạng lưới", "target": "overview"}
-    return "Ảnh hưởng toàn Hub", {"label": "Tổng quan mạng lưới", "target": "overview"}
+        active_prsv = [
+            r["reservation_id"]
+            for r in state.get("parking_reservations", [])
+            if r.get("space_id") == info["resource_id"] and r.get("status") in ("RESERVED", "IN_USE")
+        ]
+        affected_ids.extend(active_prsv)
+        if active_prsv:
+            impact = f"Ảnh hưởng phiếu đỗ {', '.join(active_prsv)}"
+        else:
+            impact = "Giảm 1 chỗ đỗ khả dụng" if status == enums.PARKING_UNAVAILABLE else "Chưa ảnh hưởng vận hành"
+        return impact, {"label": "Tổng quan mạng lưới", "target": "overview"}, affected_ids
+
+    pending_res = [
+        r["reservation_id"]
+        for r in state["reservations"]
+        if r.get("hub_id") == hub_id and r.get("status") == "PENDING"
+    ]
+    affected_ids.extend(pending_res)
+    impact = f"Ảnh hưởng toàn Hub ({len(pending_res)} đặt chỗ chờ)" if pending_res else "Ảnh hưởng toàn Hub"
+    return impact, {"label": "Tổng quan mạng lưới", "target": "overview"}, affected_ids
 
 
 def get_incident_views(include_resolved: bool = False) -> list[dict[str, Any]]:
@@ -701,7 +864,7 @@ def get_incident_views(include_resolved: bool = False) -> list[dict[str, Any]]:
         info = _resource_info(inc["resource_id"])
         if info is None:
             continue
-        impact, action = _impact_and_action(info)
+        impact, action, affected_ids = _impact_and_action(info)
         views.append(
             {
                 **inc,
@@ -710,10 +873,13 @@ def get_incident_views(include_resolved: bool = False) -> list[dict[str, Any]]:
                 "hub_id": info["hub_id"],
                 "hub_name": info["hub_name"],
                 "resource_status": info["status"],
-                "location": "Đang trên hành trình"
-                if info["status"] == enums.VEHICLE_IN_USE
-                else info["hub_name"],
+                "location": (
+                    "Đang trên hành trình"
+                    if info["status"] == enums.VEHICLE_IN_USE and info["resource_type"] == "VEHICLE"
+                    else info["hub_name"]
+                ),
                 "impact": impact,
+                "affected_ids": affected_ids,
                 "action": action,
             }
         )
@@ -730,13 +896,26 @@ def get_incident_summary() -> dict[str, int]:
     }
 
 
+def _incident_resource(state, resource_id):
+    for table, key in (
+        ("vehicles", "vehicle_id"),
+        ("parking_spaces", "space_id"),
+        ("charging_points", "charging_point_id"),
+    ):
+        for resource in state[table]:
+            if resource[key] == resource_id:
+                return resource
+    return None
+
+
+@atomic
 def create_or_update_incident(
     resource_id: str,
     description: str,
     severity: str = SEVERITY_MEDIUM,
     reported_by: str | None = None,
 ) -> dict[str, Any]:
-    """Create an incident, or update the open one of the same resource."""
+    """Create an incident, or update the open one of the same resource (UC-14 & FR-05-18)."""
     description = (description or "").strip()
     if not description:
         return _result(False, "Hãy nhập mô tả sự cố.")
@@ -761,9 +940,16 @@ def create_or_update_incident(
         existing["severity"] = severity
         existing["updated_at"] = now
         existing["history"].append({"at": now, "by": reported_by, "note": description})
+        record_audit_log(
+            state,
+            reported_by or "Operator",
+            "UPDATE_INCIDENT",
+            f"Cập nhật sự cố {existing['incident_id']} ({resource_id}, {severity}): {description}",
+            info["hub_id"],
+        )
         return _result(
             True,
-            f"{info['label']} đã có sự cố đang mở ({existing['incident_id']}); đã cập nhật.",
+            f"{info['label']} đã có sự cố đang mở ({existing['incident_id']}); đã cập nhật nội dung.",
             incident=existing,
             created=False,
         )
@@ -782,23 +968,162 @@ def create_or_update_incident(
         "resolved_at": None,
         "history": [{"at": now, "by": reported_by, "note": description}],
     }
+    resource = _incident_resource(state, resource_id)
+    if resource is not None:
+        incident["previous_status"] = resource["status"]
+        resource["incident_blocked"] = True
+        if (
+            resource["status"] == "AVAILABLE"
+            or (info["resource_type"] == "VEHICLE" and resource["status"] == "CHARGING")
+            or (info["resource_type"] == "CHARGING_POINT" and resource["status"] == "RESERVED")
+        ):
+            resource["status"] = "UNAVAILABLE"
+    elif info["resource_type"] == "HUB":
+        hub = _hub_by_id(resource_id)
+        if hub is not None and severity == SEVERITY_HIGH:
+            hub["data_validity"] = "DISCONNECTED"
+            hub["data_updated_at"] = now
+
     state["incidents"].append(incident)
+    record_audit_log(
+        state,
+        reported_by or "Operator",
+        "CREATE_INCIDENT",
+        f"Ghi nhận sự cố {incident['incident_id']} ({resource_id}, {severity}): {description}",
+        info["hub_id"],
+    )
     return _result(
-        True, f"Đã ghi nhận sự cố {incident['incident_id']}.", incident=incident, created=True
+        True,
+        f"Đã ghi nhận sự cố {incident['incident_id']}.",
+        incident=incident,
+        created=True,
     )
 
 
-def resolve_incident(incident_id: str) -> dict[str, Any]:
+@atomic
+def emergency_stop_resource_session(
+    incident_id: str, operator_name: str | None = None
+) -> dict[str, Any]:
+    """UC-14 A1: Operator confirms immediate session termination for a HIGH-severity incident."""
+    state = get_state()
+    incident = next((i for i in state["incidents"] if i["incident_id"] == incident_id), None)
+    if incident is None or incident["status"] != INCIDENT_OPEN:
+        return _result(False, "Không tìm thấy sự cố đang mở.")
+
+    rid = incident["resource_id"]
+    info = _resource_info(rid)
+    if info is None:
+        return _result(False, "Không tìm thấy tài nguyên.")
+
+    now = _now()
+    if info["resource_type"] == "VEHICLE":
+        veh = next((v for v in state["vehicles"] if v["vehicle_id"] == rid), None)
+        trip = next((t for t in state["trips"] if t["vehicle_id"] == rid and t["is_active"]), None)
+        if trip is not None:
+            trip["destination_hub_id"] = veh["hub_id"] if veh else trip["origin_hub_id"]
+            trip["end_time"] = now
+            trip["end_battery_level"] = veh["battery_level"] if veh else trip["start_battery_level"]
+            trip["is_active"] = False
+            spaces = free_spaces(state, trip["destination_hub_id"])
+            if spaces and veh:
+                spaces[0].update(status="IN_USE", vehicle_id=veh["vehicle_id"])
+        if veh is not None:
+            veh["incident_blocked"] = True
+            veh["status"] = "UNAVAILABLE"
+        incident["history"].append({"at": now, "by": operator_name, "note": "Dừng khẩn cấp chuyến đi an toàn"})
+        record_audit_log(state, operator_name or "Operator", "EMERGENCY_STOP", f"Dừng khẩn cấp phiên của xe {rid} ({incident_id})", info["hub_id"])
+        return _result(True, f"Đã dừng khẩn cấp phiên sử dụng và khóa an toàn xe {rid} (UNAVAILABLE).")
+
+    if info["resource_type"] == "CHARGING_POINT":
+        pt = next((c for c in state["charging_points"] if c["charging_point_id"] == rid), None)
+        from modules.sub04.service import interrupt_charging_session
+
+        for s in state["charging_schedules"]:
+            if s["charging_point_id"] == rid and s["status"] == "IN_USE":
+                interrupt_charging_session(state, s["schedule_id"])
+        if pt is not None:
+            pt["incident_blocked"] = True
+            pt["status"] = "UNAVAILABLE"
+        incident["history"].append({"at": now, "by": operator_name, "note": "Ngắt khẩn cấp phiên sạc"})
+        record_audit_log(state, operator_name or "Operator", "EMERGENCY_STOP", f"Ngắt khẩn cấp trụ sạc {rid} ({incident_id})", info["hub_id"])
+        return _result(True, f"Đã ngắt khẩn cấp phiên sạc và cô lập trụ {rid} (UNAVAILABLE).")
+
+    return _result(False, "Loại tài nguyên này không có phiên đang chạy để dừng khẩn cấp.")
+
+
+@atomic
+def resolve_incident(incident_id: str, resolved_by: str | None = None) -> dict[str, Any]:
+    state = get_state()
     incident = next(
-        (i for i in get_state()["incidents"] if i["incident_id"] == incident_id), None
+        (i for i in state["incidents"] if i["incident_id"] == incident_id), None
     )
     if incident is None:
         return _result(False, f"Không tìm thấy sự cố {incident_id}.")
     if incident["status"] == INCIDENT_RESOLVED:
         return _result(False, f"Sự cố {incident_id} đã được giải quyết trước đó.")
+
     now = _now()
+    rid = incident["resource_id"]
+    info = _resource_info(rid)
+    resource = _incident_resource(state, rid)
+
+    if resource is not None:
+        resource.pop("incident_blocked", None)
+        if resource.get("vehicle_id"):
+            active_trip = any(
+                t["vehicle_id"] == rid and t["is_active"] for t in state.get("trips", [])
+            )
+            open_charge = any(
+                r["vehicle_id"] == rid and r["status"] in ("PENDING", "CONFIRMED")
+                for r in state.get("shared_charging_requests", [])
+            )
+            if active_trip:
+                resource["status"] = "IN_USE"
+            elif resource.get("battery_level", 100) < MIN_OPERATING_BATTERY or open_charge:
+                resource["status"] = "CHARGING"
+                if not open_charge:
+                    from modules.sub04.service import receive_shared_vehicle_charging_need
+
+                    receive_shared_vehicle_charging_need(
+                        state, rid, resource.get("battery_level", 15)
+                    )
+            else:
+                resource["status"] = "AVAILABLE"
+        elif resource.get("charging_point_id"):
+            resource["status"] = "AVAILABLE"
+            from modules.sub04.service import _refresh_point
+
+            _refresh_point(state, resource["charging_point_id"])
+        elif resource.get("space_id"):
+            active_prsv = next(
+                (
+                    r
+                    for r in state.get("parking_reservations", [])
+                    if r["space_id"] == rid and r["status"] in ("RESERVED", "IN_USE")
+                ),
+                None,
+            )
+            if active_prsv:
+                resource["status"] = active_prsv["status"]
+            elif resource.get("vehicle_id"):
+                resource["status"] = "IN_USE"
+            else:
+                resource["status"] = "AVAILABLE"
+    elif info and info["resource_type"] == "HUB":
+        hub = _hub_by_id(rid)
+        if hub is not None:
+            hub["data_validity"] = "VALID"
+            hub["data_updated_at"] = None
+
     incident["status"] = INCIDENT_RESOLVED
     incident["updated_at"] = now
     incident["resolved_at"] = now
-    incident["history"].append({"at": now, "by": None, "note": "Đã giải quyết"})
-    return _result(True, f"Đã đánh dấu {incident_id} là đã giải quyết.", incident=incident)
+    incident["history"].append({"at": now, "by": resolved_by, "note": "Đã giải quyết và khôi phục tài nguyên"})
+    record_audit_log(
+        state,
+        resolved_by or "Operator",
+        "RESOLVE_INCIDENT",
+        f"Đóng sự cố {incident_id} và tính lại trạng thái khả dụng cho {rid}",
+        info["hub_id"] if info else None,
+    )
+    return _result(True, f"Đã đánh dấu {incident_id} là đã giải quyết và khôi phục trạng thái phù hợp.", incident=incident)
