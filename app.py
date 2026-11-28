@@ -1,5 +1,6 @@
 """Entry point for the Smart E-Mobility Hub MVP."""
 
+from datetime import datetime, timedelta
 from html import escape
 from urllib.parse import quote
 import streamlit as st
@@ -58,6 +59,185 @@ _SIDEBAR_ICON_CSS = "\n".join(
 )
 
 
+def _seed_full_demo_data(state: dict) -> None:
+    """Populate realistic edge cases (Near Capacity, stale data, incidents, dispatch, charging) once."""
+    for p in state.get("parking_spaces", []):
+        if p.get("status") == "OCCUPIED":
+            p["status"] = "IN_USE"
+
+    if state.get("_full_demo_seeded"):
+        return
+    try:
+        hubs = state.get("hubs", [])
+        if len(hubs) < 2:
+            return
+
+        now = datetime.now()
+        fresh_iso = now.isoformat(timespec="seconds")
+        stale_iso = (now - timedelta(hours=2, minutes=15)).isoformat(timespec="seconds")
+
+        for idx, h in enumerate(hubs):
+            h["data_updated_at"] = stale_iso if idx == len(hubs) - 1 else fresh_iso
+
+        primary_hub = hubs[0]["hub_id"]
+        near_hub = hubs[2]["hub_id"] if len(hubs) >= 3 else hubs[1]["hub_id"]
+        source_hub = hubs[1]["hub_id"]
+
+        # 1. Force near_hub into Near Capacity (1/6 vehicles = 17% AVAILABLE, 1/6 parking = 17% AVAILABLE)
+        near_vehicles = [v for v in state.get("vehicles", []) if v.get("hub_id") == near_hub]
+        for idx, v in enumerate(near_vehicles):
+            v["status"] = "AVAILABLE" if idx == 0 else "IN_USE"
+        near_spaces = [p for p in state.get("parking_spaces", []) if p.get("hub_id") == near_hub]
+        for idx, p in enumerate(near_spaces):
+            p["status"] = "AVAILABLE" if idx == 0 else "IN_USE"
+
+        # 2. Ensure primary_hub has 1 UNAVAILABLE vehicle & 1 UNAVAILABLE charging point
+        prim_vehicles = [v for v in state.get("vehicles", []) if v.get("hub_id") == primary_hub]
+        broken_veh = next((v for v in prim_vehicles if v.get("status") == "UNAVAILABLE"), None)
+        if broken_veh is None and prim_vehicles:
+            broken_veh = prim_vehicles[-1]
+            broken_veh["status"] = "UNAVAILABLE"
+            broken_veh["battery_level"] = 18
+            broken_veh["location"] = "Khu bảo trì"
+
+        prim_points = [cp for cp in state.get("charging_points", []) if cp.get("hub_id") == primary_hub]
+        broken_cp = next((cp for cp in prim_points if cp.get("status") == "UNAVAILABLE"), None)
+        if broken_cp is None and len(prim_points) >= 4:
+            broken_cp = prim_points[-1]
+            broken_cp["status"] = "UNAVAILABLE"
+
+        # 3. Sample dispatch orders (1 TRANSITING incoming to primary_hub, 1 COMPLETED)
+        orders = state.setdefault("dispatch_orders", [])
+        if not any(o.get("status") == "TRANSITING" for o in orders):
+            movers = [
+                v["vehicle_id"]
+                for v in state.get("vehicles", [])
+                if v.get("hub_id") == source_hub and v.get("status") == "AVAILABLE"
+            ][:2]
+            if movers:
+                orders.append(
+                    {
+                        "order_id": "DO-DEMO-01",
+                        "source_hub_id": source_hub,
+                        "target_hub_id": primary_hub,
+                        "vehicle_ids": movers,
+                        "quantities": {"ELECTRIC_BICYCLE": len(movers)},
+                        "status": "TRANSITING",
+                        "created_at": (now - timedelta(minutes=12)).isoformat(timespec="seconds"),
+                        "eta": (now + timedelta(minutes=18)).isoformat(timespec="seconds"),
+                        "created_by": "Demo Operator",
+                    }
+                )
+        if not any(o.get("status") == "COMPLETED" for o in orders):
+            orders.append(
+                {
+                    "order_id": "DO-DEMO-02",
+                    "source_hub_id": primary_hub,
+                    "target_hub_id": near_hub,
+                    "vehicle_ids": ["EV-DEMO-99"],
+                    "quantities": {"ELECTRIC_MOTORCYCLE": 1},
+                    "status": "COMPLETED",
+                    "created_at": (now - timedelta(hours=3)).isoformat(timespec="seconds"),
+                    "eta": (now - timedelta(hours=2, minutes=30)).isoformat(timespec="seconds"),
+                    "created_by": "Demo Operator",
+                }
+            )
+
+        # 4. Sample incidents matching Figma page 7 (HIGH, MEDIUM, LOW on IN_USE vehicle)
+        incidents = state.setdefault("incidents", [])
+        if len([i for i in incidents if i.get("status") == "OPEN"]) < 3:
+            if broken_veh and not any(i.get("resource_id") == broken_veh["vehicle_id"] for i in incidents):
+                incidents.append(
+                    {
+                        "incident_id": "INC-DEMO-01",
+                        "hub_id": primary_hub,
+                        "resource_id": broken_veh["vehicle_id"],
+                        "resource_type": "VEHICLE",
+                        "severity": "HIGH",
+                        "description": "Lỗi cảm biến pin & phanh điện tử, cần kiểm tra tại xưởng",
+                        "status": "OPEN",
+                        "created_at": (now - timedelta(minutes=35)).isoformat(timespec="seconds"),
+                        "reported_by": "Demo Operator",
+                    }
+                )
+            if broken_cp and not any(i.get("resource_id") == broken_cp["charging_point_id"] for i in incidents):
+                incidents.append(
+                    {
+                        "incident_id": "INC-DEMO-02",
+                        "hub_id": primary_hub,
+                        "resource_id": broken_cp["charging_point_id"],
+                        "resource_type": "CHARGING_POINT",
+                        "severity": "MEDIUM",
+                        "description": "Đầu sạc không nhận tín hiệu giao tiếp từ xe",
+                        "status": "OPEN",
+                        "created_at": (now - timedelta(hours=1, minutes=10)).isoformat(timespec="seconds"),
+                        "reported_by": "Demo Operator",
+                    }
+                )
+            in_use_veh = next((v for v in state.get("vehicles", []) if v.get("status") == "IN_USE"), None)
+            if in_use_veh and not any(i.get("resource_id") == in_use_veh["vehicle_id"] for i in incidents):
+                incidents.append(
+                    {
+                        "incident_id": "INC-DEMO-03",
+                        "hub_id": in_use_veh.get("hub_id", near_hub),
+                        "resource_id": in_use_veh["vehicle_id"],
+                        "resource_type": "VEHICLE",
+                        "severity": "LOW",
+                        "description": "Vỡ xi nhan, xước sơn",
+                        "status": "OPEN",
+                        "created_at": (now - timedelta(hours=2)).isoformat(timespec="seconds"),
+                        "reported_by": "Demo Operator",
+                    }
+                )
+
+        # 5. Sample charging requests for SUB-04 priority & scheduling screens
+        shared_reqs = state.setdefault("shared_charging_requests", [])
+        priv_reqs = state.setdefault("charging_requests", [])
+        if not shared_reqs and not priv_reqs:
+            avail_vehs = [v for v in prim_vehicles if v.get("status") == "AVAILABLE"]
+            if avail_vehs:
+                shared_reqs.append(
+                    {
+                        "request_id": "CR-DEMO-01",
+                        "hub_id": primary_hub,
+                        "vehicle_id": avail_vehs[0]["vehicle_id"],
+                        "current_battery": 14,
+                        "target_battery": 85,
+                        "departure_time": (now + timedelta(hours=1)).strftime("%H:%M"),
+                        "created_at": (now - timedelta(minutes=15)).isoformat(timespec="seconds"),
+                        "status": "PENDING",
+                    }
+                )
+            priv_reqs.append(
+                {
+                    "request_id": "PR-DEMO-02",
+                    "hub_id": primary_hub,
+                    "user_id": "SV-2210456",
+                    "current_battery": 46,
+                    "target_battery": 80,
+                    "departure_time": (now + timedelta(hours=2)).strftime("%H:%M"),
+                    "created_at": (now - timedelta(minutes=10)).isoformat(timespec="seconds"),
+                    "status": "PENDING",
+                }
+            )
+            if len(avail_vehs) >= 2:
+                shared_reqs.append(
+                    {
+                        "request_id": "CR-DEMO-03",
+                        "hub_id": primary_hub,
+                        "vehicle_id": avail_vehs[1]["vehicle_id"],
+                        "current_battery": 32,
+                        "target_battery": 80,
+                        "departure_time": None,
+                        "created_at": (now - timedelta(minutes=5)).isoformat(timespec="seconds"),
+                        "status": "PENDING",
+                    }
+                )
+
+        state["_full_demo_seeded"] = True
+    except Exception:
+        pass
+
 # These styles are injected only for an Operator session. Student screens
 # continue using their original UI and are not affected by Operator CSS.
 OPERATOR_CSS = f"""
@@ -80,45 +260,79 @@ html, body, .stApp,
     display: none !important;
 }}
 [data-testid="stExpandSidebarButton"],
-[data-testid="collapsedControl"] {{
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarHeader"] * {{
     pointer-events: auto !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    color: transparent !important;
+}}
+[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"],
+[data-testid="collapsedControl"] [data-testid="stIconMaterial"],
+[data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
+[data-testid="stSidebarHeader"] [data-testid="stIconMaterial"] {{
+    font-size: 18px !important;
+    line-height: 1 !important;
+    color: #6b7280 !important;
+}}
+[data-testid="stExpandSidebarButton"],
+[data-testid="collapsedControl"] {{
     visibility: visible !important;
     opacity: 1 !important;
     background: #ffffff !important;
     border: 1px solid #e5e7eb !important;
     border-radius: 10px !important;
 }}
+[data-testid="stSidebar"][aria-expanded="true"] ~ div [data-testid="stExpandSidebarButton"] {{
+    display: none !important;
+}}
+
+/* Sidebar layout & clean default font */
 [data-testid="stSidebar"] {{
-    width: clamp(220px, 16.5vw, 250px) !important;
+    width: clamp(220px, 16.5vw, 248px) !important;
     min-width: 220px !important;
-    max-width: 250px !important;
+    max-width: 248px !important;
     background: #ffffff !important;
     border-right: 1px solid #eef2f6 !important;
 }}
-[data-testid="stSidebar"] > div {{ width: clamp(220px, 16.5vw, 250px) !important; }}
+[data-testid="stSidebar"] > div {{
+    width: clamp(220px, 16.5vw, 248px) !important;
+    height: 100vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}}
 [data-testid="stSidebarHeader"] {{
-    height: auto !important;
-    min-height: 0 !important;
-    padding: 8px 14px 0 !important;
+    height: 16px !important;
+    min-height: 16px !important;
+    max-height: 16px !important;
+    padding: 4px 14px 0 !important;
     margin: 0 !important;
+    overflow: hidden !important;
+    flex: 0 0 auto !important;
 }}
 [data-testid="stSidebarContent"] {{
-    padding: 0 14px 14px !important;
+    flex: 1 1 auto !important;
+    padding: 0 14px 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+}}
+[data-testid="stSidebarUserContent"] {{
+    flex: 1 1 auto !important;
+    padding: 4px 0 0 !important;
     display: flex !important;
     flex-direction: column !important;
 }}
-[data-testid="stSidebarUserContent"] {{
-    padding: 2px 0 0 !important;
+[data-testid="stSidebarUserContent"] > div,
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"]:has(.st-key-operator_footer):not(.st-key-operator_footer):not([data-testid="stColumn"] [data-testid="stVerticalBlock"]) {{
     flex: 1 1 auto !important;
     display: flex !important;
     flex-direction: column !important;
-}}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.st-key-operator_footer):not(.st-key-operator_footer):not([data-testid="stColumn"] [data-testid="stVerticalBlock"]) {{
     gap: 6px !important;
-    min-height: calc(100vh - 108px) !important;
-    display: flex !important;
-    flex-direction: column !important;
 }}
+
 [data-testid="stMainBlockContainer"],
 [data-testid="stMain"] .block-container {{
     width: 100% !important;
@@ -184,8 +398,9 @@ html, body, .stApp,
 }}
 [data-testid="stSidebar"] .stButton > button p {{
     text-align: left !important;
-    font-weight: 500 !important;
     font-size: .84rem !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
     white-space: nowrap !important;
 }}
 [data-testid="stSidebar"] [class*="st-key-operator_nav_button_"] button::before {{
@@ -216,21 +431,25 @@ html, body, .stApp,
 [data-testid="stSidebar"] .stButton > button[kind="primary"] *,
 [data-testid="stSidebar"] .stButton > button[kind="primary"] p {{
     color: #ffffff !important;
+    font-size: .84rem !important;
     font-weight: 600 !important;
 }}
 [data-testid="stSidebar"] [class*="st-key-operator_nav_button_"] button[kind="primary"]::before {{
     background-color: #ffffff !important;
 }}
 
-/* Sidebar footer pinned cleanly above bottom edge: profile + inline logout icon */
+/* Sidebar footer pinned to bottom: profile + inline logout icon */
 [data-testid="stSidebar"] .st-key-operator_footer,
-[data-testid="stSidebar"] [data-testid="stLayoutWrapper"]:has(> .st-key-operator_footer) {{
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > div:has(.st-key-operator_footer) {{
     margin-top: auto !important;
 }}
 [data-testid="stSidebar"] .st-key-operator_footer {{
+    position: relative;
+    z-index: 10;
+    background: #ffffff;
     border-top: 1px solid #edf0f4;
-    padding-top: 12px;
-    padding-bottom: 4px;
+    padding-top: 14px;
+    padding-bottom: 2px;
 }}
 [data-testid="stSidebar"] .st-key-operator_footer [data-testid="stHorizontalBlock"] {{
     align-items: center !important;
@@ -249,7 +468,7 @@ html, body, .stApp,
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }}
 .operator-profile-role {{
-    color: #94a3b8; font-size: .72rem; margin-top: 1px;
+    color: #94a3b8; font-size: .72rem; font-weight: 400; margin-top: 1px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }}
 [data-testid="stSidebar"] .st-key-operator_sign_out button {{
@@ -354,15 +573,11 @@ html, body, .stApp,
 @media (max-width: 640px) {{
     [data-testid="stMainBlockContainer"], [data-testid="stMain"] .block-container {{ padding:14px 12px 28px !important; }}
 }}
-
-[data-testid="stSidebar"] .st-key-operator_footer {{
-    position: relative !important;
-    top: 20px !important;
-}}
 </style>
 """
 
 state = get_state()
+_seed_full_demo_data(state)
 current_user = render_auth(state)
 if current_user is None:
     st.stop()
@@ -394,7 +609,7 @@ if role == ROLE_OPERATOR:
             "<style>"
             "[data-testid='stSidebar'] .st-key-operator_nav_button_incidents button::after{"
             f"content:'{open_incidents}';margin-left:auto;padding:1px 8px;border-radius:999px;"
-            "background:#ffe4e6;color:#e11d48;font-size:.72rem;font-weight:600;line-height:1.4;"
+            "background:#ffe4e6;color:#e11d48;font-size:11px;font-weight:700;line-height:1.4;"
             "}"
             "[data-testid='stSidebar'] .st-key-operator_nav_button_incidents button[kind='primary']::after{"
             "background:#ffffff;color:#658520;"

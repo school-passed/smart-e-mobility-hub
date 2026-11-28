@@ -40,9 +40,11 @@ STATUS_TONE = {
     "UNAVAILABLE": "red",
     "RESERVED": "blue",
     "TRANSITING": "purple",
+    "DELAYED": "amber",
     "COMPLETED": "green",
     "CANCELLED": "gray",
 }
+
 SEVERITY_TEXT = {"HIGH": "NGHIÊM TRỌNG", "MEDIUM": "TRUNG BÌNH", "LOW": "NHẸ"}
 SEVERITY_TONE = {"HIGH": "red", "MEDIUM": "amber", "LOW": "blue"}
 POINT_TEXT = {
@@ -77,9 +79,11 @@ _CSS = """
 .st-key-sub05_root b,
 .st-key-sub05_root strong{font-weight:600}
 
-/* Prevent Streamlit markdown negative bottom-margin from pulling cards past borders */
+/* Full-width markdown containers & prevent negative bottom-margin overflow */
 .st-key-sub05_root [data-testid="stMarkdown"],
-.st-key-sub05_root [data-testid="stMarkdownContainer"],
+.st-key-sub05_root [data-testid="stMarkdownContainer"]{
+  width:100% !important;margin-bottom:0 !important
+}
 .st-key-sub05_root [data-testid="stMarkdownContainer"] > p:last-child{
   margin-bottom:0 !important
 }
@@ -115,39 +119,89 @@ _CSS = """
 .st-key-sub05_root .s5-inc-n{font-size:2.15rem;font-weight:700;line-height:1.1}
 
 /* Light theme overrides for Streamlit input widgets inside SUB-05 */
-.st-key-sub05_root [data-testid="stForm"]{
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stForm"]{
   border-radius:16px !important;border-color:#e5e7eb !important;
   background:#ffffff !important;padding:16px 20px !important
 }
-.st-key-sub05_root [data-baseweb="select"] > div{
-  background:#ffffff !important;background-color:#ffffff !important;
-  border:1px solid #e5e7eb !important;border-radius:10px !important;color:#111827 !important
-}
-.st-key-sub05_root [data-baseweb="select"] > div > div{
-  background:transparent !important;background-color:transparent !important;border:none !important
-}
-.st-key-sub05_root [data-baseweb="select"] span,
-.st-key-sub05_root [data-baseweb="select"] input{color:#111827 !important;font-weight:500 !important}
-.st-key-sub05_root [data-baseweb="select"] svg{fill:#6b7280 !important;color:#6b7280 !important}
 
-.st-key-sub05_root [data-testid="stNumberInputContainer"]{
+/* Unified pure-white 42px Selectbox (no inner gray split or double border) */
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"],
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div,
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div div,
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div div::before,
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div div::after{
   background:#ffffff !important;background-color:#ffffff !important;
-  border:1px solid #e5e7eb !important;border-radius:10px !important;overflow:hidden
+  border:none !important;box-shadow:none !important;outline:none !important;border-radius:0 !important
 }
-.st-key-sub05_root [data-testid="stNumberInputContainer"] input{
-  background:#ffffff !important;color:#111827 !important;font-weight:500 !important
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div{
+  border:1px solid #e5e7eb !important;border-radius:12px !important;
+  min-height:42px !important;height:42px !important;padding:0 14px !important;
+  display:flex !important;align-items:center !important
 }
-.st-key-sub05_root [data-testid="stNumberInputStepDown"],
-.st-key-sub05_root [data-testid="stNumberInputStepUp"]{
-  background:#f8fafc !important;background-color:#f8fafc !important;
-  color:#374151 !important;border-left:1px solid #e5e7eb !important
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] > div:hover{
+  border-color:#cbd5e1 !important
 }
-.st-key-sub05_root [data-testid="stNumberInputStepDown"]:hover,
-.st-key-sub05_root [data-testid="stNumberInputStepUp"]:hover{
-  background:#f1f5f9 !important
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] span,
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] input{
+  color:#111827 !important;font-weight:500 !important;font-size:.9rem !important
 }
-.st-key-sub05_root [data-testid="stNumberInputStepDown"] svg,
-.st-key-sub05_root [data-testid="stNumberInputStepUp"] svg{fill:#374151 !important}
+[data-testid="stMain"] .st-key-sub05_root [data-baseweb="select"] svg{
+  fill:#6b7280 !important;color:#6b7280 !important;width:16px !important;height:16px !important
+}
+
+/* Unified pure-white 42px NumberInput (no inner border or gray box on -/+) */
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"],
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"] > div,
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"] [data-baseweb="input"],
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"] [data-baseweb="input"] > div,
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"] input,
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepDown"],
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepUp"]{
+  background:#ffffff !important;background-color:#ffffff !important;
+  border:none !important;box-shadow:none !important;outline:none !important;border-radius:0 !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"]{
+  border:1px solid #e5e7eb !important;border-radius:12px !important;
+  height:42px !important;min-height:42px !important;overflow:hidden !important;
+  display:flex !important;align-items:center !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"]:hover{
+  border-color:#cbd5e1 !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputContainer"] input{
+  color:#111827 !important;font-weight:600 !important;font-size:.92rem !important;
+  padding:0 10px !important;height:40px !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepDown"],
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepUp"]{
+  border-left:1px solid #f1f5f9 !important;
+  width:28px !important;min-width:28px !important;height:40px !important;
+  display:flex !important;align-items:center !important;justify-content:center !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepDown"]:hover,
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepUp"]:hover{
+  background:#f8fafc !important
+}
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepDown"] svg,
+[data-testid="stMain"] .st-key-sub05_root [data-testid="stNumberInputStepUp"] svg{
+  fill:#6b7280 !important;color:#6b7280 !important;width:12px !important;height:12px !important
+}
+
+/* Dispatch form exact vertical alignment */
+.st-key-sub05_root .st-key-s5_panel_dispatch_form [data-testid="stVerticalBlock"]{
+  gap:0 !important
+}
+.st-key-sub05_root .st-key-s5_panel_dispatch_form .s5-h{
+  margin-bottom:14px !important
+}
+.st-key-sub05_root .s5-field-lbl{
+  font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:#6b7280;line-height:1.2;margin:0;height:22px;display:flex;align-items:flex-start
+}
+.st-key-sub05_root .s5-field-sub{
+  font-size:.78rem;color:#6b7280;margin-top:6px;line-height:1.35
+}
+.st-key-sub05_root .s5-field-sub b{color:#374151;font-weight:600}
 
 .st-key-sub05_root [data-baseweb="checkbox"]:has(input:not(:checked)) > span:first-child{
   background:#ffffff !important;background-color:#ffffff !important;
@@ -171,48 +225,107 @@ _CSS = """
 .st-key-sub05_root .s5-purple{color:#6b21a8;background:#f3e8ff;border-color:#e9d5ff}
 .st-key-sub05_root .s5-gray{color:#4b5563;background:#f3f4f6;border-color:#e5e7eb}
 
-/* Primary & action buttons inside SUB-05 (including st.form_submit_button) */
-.st-key-sub05_root button[kind="primary"],
-.st-key-sub05_root button[data-testid="stBaseButton-primary"],
-.st-key-sub05_root button[kind="primaryFormSubmit"],
-.st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]{
+/* Primary & action buttons inside SUB-05 */
+[data-testid="stMain"] .st-key-sub05_root button[kind="primary"],
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primary"],
+[data-testid="stMain"] .st-key-sub05_root button[kind="primaryFormSubmit"],
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]{
   background:#789c28 !important;background-color:#789c28 !important;
   border:1px solid #789c28 !important;color:#ffffff !important;
   border-radius:12px !important;font-weight:600 !important
 }
-.st-key-sub05_root button[kind="primary"] *,
-.st-key-sub05_root button[data-testid="stBaseButton-primary"] *,
-.st-key-sub05_root button[kind="primaryFormSubmit"] *,
-.st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"] *{
+[data-testid="stMain"] .st-key-sub05_root button[kind="primary"] *,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primary"] *,
+[data-testid="stMain"] .st-key-sub05_root button[kind="primaryFormSubmit"] *,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"] *{
   color:#ffffff !important;font-weight:600 !important
 }
-.st-key-sub05_root button[kind="primary"]:hover,
-.st-key-sub05_root button[data-testid="stBaseButton-primary"]:hover,
-.st-key-sub05_root button[kind="primaryFormSubmit"]:hover,
-.st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]:hover{
+[data-testid="stMain"] .st-key-sub05_root button[kind="primary"]:hover,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stMain"] .st-key-sub05_root button[kind="primaryFormSubmit"]:hover,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]:hover{
   background:#658520 !important;background-color:#658520 !important;
   border-color:#658520 !important
 }
-.st-key-sub05_root button[kind="primary"]:disabled,
-.st-key-sub05_root button[data-testid="stBaseButton-primary"]:disabled,
-.st-key-sub05_root button[kind="primaryFormSubmit"]:disabled,
-.st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]:disabled{
-  background:#d1d5db !important;background-color:#d1d5db !important;
-  border-color:#d1d5db !important;opacity:1 !important
+[data-testid="stMain"] .st-key-sub05_root button[kind="primary"]:disabled,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primary"]:disabled,
+[data-testid="stMain"] .st-key-sub05_root button[kind="primaryFormSubmit"]:disabled,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primaryFormSubmit"]:disabled{
+  background:#e5e7eb !important;background-color:#e5e7eb !important;
+  border-color:#e5e7eb !important;opacity:1 !important
+}
+[data-testid="stMain"] .st-key-sub05_root button[kind="primary"]:disabled *,
+[data-testid="stMain"] .st-key-sub05_root button[data-testid="stBaseButton-primary"]:disabled *{
+  color:#9ca3af !important
+}
+[data-testid="stMain"] .st-key-sub05_root .st-key-sub05_confirm,
+[data-testid="stMain"] .st-key-sub05_root .st-key-sub05_confirm [data-testid="stButton"]{
+  display:flex !important;justify-content:flex-end !important;width:100% !important
+}
+[data-testid="stMain"] .st-key-sub05_root .st-key-sub05_confirm button{
+  width:auto !important;height:42px !important;min-height:42px !important;
+  padding:0 24px !important;border-radius:12px !important;white-space:nowrap !important
+}
+
+/* Header toolbars: badges & checkbox aligned flush right next to primary pill button */
+.st-key-sub05_root .st-key-s5_ov_bar,
+.st-key-sub05_root .st-key-s5_ov_bar [data-testid="stHorizontalBlock"]{
+  width:100% !important;display:flex !important;justify-content:flex-end !important;
+  align-items:center !important;gap:10px !important;flex-wrap:nowrap !important
+}
+.st-key-sub05_root .st-key-s5_ov_bar [data-testid="stColumn"]{
+  width:auto !important;flex:0 0 auto !important;min-width:0 !important
+}
+.st-key-sub05_root .s5-overview-badges{
+  display:inline-flex;align-items:center;gap:8px;flex-wrap:nowrap
+}
+.st-key-sub05_root .st-key-sub05_show_resolved,
+.st-key-sub05_root .st-key-sub05_show_resolved [data-testid="stCheckbox"]{
+  display:flex !important;justify-content:flex-end !important;width:100% !important
+}
+.st-key-sub05_root .st-key-sub05_show_resolved label{
+  width:auto !important;margin:0 !important;padding:0 !important;
+  display:inline-flex !important;align-items:center !important;white-space:nowrap !important
+}
+.st-key-sub05_root .st-key-sub05_show_resolved p{
+  font-size:.84rem !important;color:#4b5563 !important;font-weight:500 !important;
+  line-height:1.2 !important;white-space:nowrap !important
+}
+.st-key-sub05_root .st-key-sub05_whatif,
+.st-key-sub05_root .st-key-sub05_whatif [data-testid="stButton"],
+.st-key-sub05_root .st-key-sub05_new_incident,
+.st-key-sub05_root .st-key-sub05_new_incident [data-testid="stButton"]{
+  display:flex !important;justify-content:flex-end !important;width:auto !important
+}
+.st-key-sub05_root .st-key-sub05_whatif button,
+.st-key-sub05_root .st-key-sub05_new_incident button{
+  width:auto !important;border-radius:999px !important;padding:8px 20px !important;white-space:nowrap !important
+}
+.st-key-sub05_root [class*="st-key-sub05_back"] button{
+  border-radius:12px !important;border:1px solid #e5e7eb !important;
+  background:#fff !important;min-height:38px !important;height:38px !important;
+  width:38px !important;padding:0 !important
+}
+.st-key-sub05_root [class*="st-key-sub05_back"] button *{
+  color:#111827 !important;font-weight:600 !important;font-size:1.15rem !important;line-height:1 !important
+}
+.st-key-sub05_root [class*="st-key-sub05_back"] button:hover{
+  background:#f8fafc !important;border-color:#cbd5e1 !important
 }
 
 /* Overview Hub rows */
 .st-key-sub05_root [class*="st-key-s5_hubcard_"]{
-  box-sizing:border-box;border-radius:16px;padding:12px 18px;margin:0;width:auto
+  box-sizing:border-box !important;border-radius:16px !important;
+  padding:12px 18px !important;margin:0 !important;width:auto !important
 }
 .st-key-sub05_root [class*="st-key-s5_hubcard_normal_"]{
-  background:#f8fafc;border:1px solid #f1f5f9
+  background:#f8fafc !important;border:1px solid #f1f5f9 !important
 }
 .st-key-sub05_root [class*="st-key-s5_hubcard_near_"]{
-  background:#fff5f6;border:1px solid #fecdd3
+  background:#fff5f6 !important;border:1px solid #fecdd3 !important
 }
 .st-key-sub05_root [class*="st-key-s5_hubcard_stale_"]{
-  background:#fffbeb;border:2px dashed #e6c34a
+  background:#fffbeb !important;border:2px dashed #e6c34a !important
 }
 .st-key-sub05_root [class*="st-key-s5_hubcard_"] [data-testid="stHorizontalBlock"]{
   align-items:center !important;width:100% !important
@@ -258,8 +371,11 @@ _CSS = """
 
 /* Pure CSS grid for the 3 progress bars + badge inside each Hub row */
 .st-key-sub05_root .s5-bars-grid{
-  box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr 1fr 124px;
-  gap:22px;align-items:center;width:100%
+  box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr 1fr 114px;
+  gap:18px;align-items:start;width:100%
+}
+.st-key-sub05_root .s5-bars-badge{
+  align-self:center;text-align:right
 }
 .st-key-sub05_root .s5-bar-head{
   display:flex;justify-content:space-between;align-items:baseline;
@@ -347,19 +463,31 @@ _CSS = """
 .st-key-sub05_root [class*="st-key-sub05_hubinc_"] button:hover{background:#be123c !important;border-color:#be123c !important}
 
 /* Tables & Incident action buttons */
-.st-key-sub05_root .s5-thead{font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6b7280;padding:4px 0}
+.st-key-sub05_root .s5-thead{
+  display:block;width:100%;font-size:.72rem;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;color:#6b7280;padding:4px 0
+}
+.st-key-sub05_root .s5-thead-center{text-align:center !important}
 .st-key-sub05_root .s5-thead-line{border:none;border-top:1px solid #e5e7eb;margin:-2px 0 2px 0}
 .st-key-sub05_root .s5-cell{font-size:.88rem;padding:4px 0;color:#111827}
 .st-key-sub05_root .s5-sep{border:none;border-top:1px solid #f1f5f9;margin:-2px 0}
 .st-key-sub05_root [class*="st-key-sub05_act_"] button{
-  background:#fff !important;border:1px solid #e5e7eb !important;border-radius:10px !important;padding:5px 10px !important;min-height:0 !important
+  background:#fff !important;border:1px solid #e5e7eb !important;border-radius:10px !important;
+  padding:5px 12px !important;min-height:34px !important;height:34px !important;
+  display:flex !important;justify-content:center !important;align-items:center !important
 }
-.st-key-sub05_root [class*="st-key-sub05_act_"] button *{color:#111827 !important;font-size:.8rem !important;font-weight:600 !important}
+.st-key-sub05_root [class*="st-key-sub05_act_"] button *{
+  color:#111827 !important;font-size:.8rem !important;font-weight:600 !important;white-space:nowrap !important
+}
 .st-key-sub05_root [class*="st-key-sub05_act_"] button:hover{background:#f8fafc !important;border-color:#d1d5db !important}
 .st-key-sub05_root [class*="st-key-sub05_res_"] button{
-  background:#eef7e6 !important;border:1px solid #cde4b4 !important;border-radius:10px !important;padding:5px 10px !important;min-height:0 !important
+  background:#eef7e6 !important;border:1px solid #cde4b4 !important;border-radius:10px !important;
+  padding:5px 12px !important;min-height:34px !important;height:34px !important;
+  display:flex !important;justify-content:center !important;align-items:center !important
 }
-.st-key-sub05_root [class*="st-key-sub05_res_"] button *{color:#3f6212 !important;font-size:.8rem !important;font-weight:600 !important}
+.st-key-sub05_root [class*="st-key-sub05_res_"] button *{
+  color:#3f6212 !important;font-size:.8rem !important;font-weight:600 !important;white-space:nowrap !important
+}
 .st-key-sub05_root [class*="st-key-sub05_res_"] button:hover{background:#dcfce7 !important}
 .st-key-sub05_root [class*="st-key-sub05_done_"] button{
   background:#eef7e6 !important;border:1px solid #cde4b4 !important;border-radius:8px !important;padding:4px 8px !important;min-height:0 !important
@@ -369,23 +497,6 @@ _CSS = """
   background:#fff !important;border:1px solid #fecdd3 !important;border-radius:8px !important;padding:4px 8px !important;min-height:0 !important
 }
 .st-key-sub05_root [class*="st-key-sub05_cancel_"] button *{color:#be123c !important;font-size:.78rem !important;font-weight:600 !important}
-
-/* Incident toolbar: move only the checkbox toward the report button.
-   The three columns and the report button itself keep their original sizes. */
-.st-key-sub05_root .st-key-s5_incident_show_resolved [data-testid="stCheckbox"]{
-  width:100% !important;
-  display:flex !important;
-  justify-content:flex-end !important;
-  position:relative !important;
-  left:10px !important;
-  z-index:1 !important;
-}
-.st-key-sub05_root .st-key-s5_incident_show_resolved [data-testid="stCheckbox"] label{
-  width:max-content !important;
-  margin-left:auto !important;
-  margin-right:0 !important;
-  justify-content:flex-end !important;
-}
 
 /* Responsive adjustments */
 @media(max-width:1100px){
@@ -400,7 +511,6 @@ _CSS = """
 }
 </style>
 """
-
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -541,7 +651,7 @@ def _page_overview(data: dict, user: str) -> None:
     """Network overview. Hub names are clickable and open their detail page."""
     totals = data["totals"]
 
-    title_col, right_col = _cols([5.2, 4.8], vertical_alignment="center")
+    title_col, right_col = _cols([4.6, 5.4], vertical_alignment="center")
     with title_col:
         st.markdown(
             f'<div class="s5-eyebrow">Xin chào, {esc(user)}</div>'
@@ -549,28 +659,27 @@ def _page_overview(data: dict, user: str) -> None:
             unsafe_allow_html=True,
         )
     with right_col:
-        pills_col, action_col = _cols([2.8, 1.6], vertical_alignment="center")
         badges = []
         if data["near_capacity_count"]:
             badges.append(_pill(f"{data['near_capacity_count']} Hub gần đầy", "red"))
         if data["stale_count"]:
             badges.append(_pill(f"{data['stale_count']} Hub dữ liệu trễ", "amber"))
-        with pills_col:
-            if badges:
-                st.markdown(
-                    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">'
-                    + "".join(badges)
-                    + "</div>",
-                    unsafe_allow_html=True,
+        with st.container(key="s5_ov_bar"):
+            b_col, btn_col = _cols([1, 1], vertical_alignment="center", gap="small")
+            with b_col:
+                if badges:
+                    st.markdown(
+                        '<div class="s5-overview-badges">' + "".join(badges) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+            with btn_col:
+                st.button(
+                    "Chạy What-if →",
+                    type="primary",
+                    key="sub05_whatif",
+                    on_click=_go_other,
+                    args=("What-if Simulation",),
                 )
-        with action_col:
-            st.button(
-                "Chạy What-if →",
-                type="primary",
-                key="sub05_whatif",
-                on_click=_go_other,
-                args=("What-if Simulation",),
-            )
 
     cards = [
         ("Khả dụng", totals["free"], f"AVAILABLE · trên tổng {totals['total']} xe", "lime"),
@@ -596,9 +705,9 @@ def _page_overview(data: dict, user: str) -> None:
             state_class = "stale" if hub["stale"] else "near" if hub["near"] else "normal"
             safe_hub_id = "".join(ch if ch.isalnum() else "_" for ch in hub["hub_id"])
             with st.container(key=f"s5_hubcard_{state_class}_{safe_hub_id}"):
-                left_col, right_col = st.columns([1.45, 3.85])
+                left_col, right_col = st.columns([0.95, 4.35], gap="small")
                 with left_col:
-                    c_idx, c_name = st.columns([0.12, 1.38], gap="small")
+                    c_idx, c_name = st.columns([0.16, 1.34], gap="small")
                     c_idx.markdown(f'<span class="s5-idx">{index}</span>', unsafe_allow_html=True)
                     c_name.button(
                         _hub_label(hub),
@@ -617,7 +726,7 @@ def _page_overview(data: dict, user: str) -> None:
                     + _bar("Xe khả dụng", hub["vehicles"], "sắp hết xe", hub["stale"])
                     + _bar("Chỗ đỗ trống", hub["parking"], "sắp hết chỗ đỗ", hub["stale"])
                     + _bar("Cổng sạc rảnh", hub["charging"], "sắp hết cổng sạc", hub["stale"])
-                    + f'<div style="text-align:right">{badge_html}</div>'
+                    + f'<div class="s5-bars-badge">{badge_html}</div>'
                     + "</div>",
                     unsafe_allow_html=True,
                 )
@@ -648,7 +757,6 @@ def _page_overview(data: dict, user: str) -> None:
                     kwargs={"sub05_tgt": alert["hub_id"]} if alert["kind"] == "capacity" else {},
                     use_container_width=True,
                 )
-
 
 # ---------------------------------------------------------------------------
 # Page: chi tiết Hub
@@ -798,10 +906,11 @@ def _page_hub(hub_id: str) -> None:
                         unsafe_allow_html=True,
                     )
                     c_b.button(
-                        "Xử lý",
+                        "Báo kỹ thuật",
                         key=f"sub05_hubinc_{inc['incident_id']}",
                         on_click=_go,
                         args=("incidents",),
+                        kwargs={PREFILL_KEY: inc["resource_id"], SHOW_FORM_KEY: True},
                         use_container_width=True,
                     )
 
@@ -843,20 +952,32 @@ def _page_dispatch(data: dict, user: str) -> None:
         if len(ids) > 1:
             st.session_state.setdefault("sub05_tgt", ids[1])
 
-        c_src, c_arr, c_tgt, c_qty, c_btn = _cols([2.2, 0.25, 2.2, 2.8, 1.5], vertical_alignment="top")
+        c_src, c_arr, c_tgt, c_qty, c_btn = _cols([2.35, 0.25, 2.35, 2.1, 1.35], vertical_alignment="top")
 
         with c_src:
+            st.markdown('<div class="s5-field-lbl">HUB NGUỒN (TRẠM XUẤT XE) *</div>', unsafe_allow_html=True)
             src = st.selectbox(
-                "HUB NGUỒN (TRẠM XUẤT XE) *", ids, format_func=hubs.get, key="sub05_src"
+                "HUB NGUỒN (TRẠM XUẤT XE) *",
+                ids,
+                format_func=hubs.get,
+                key="sub05_src",
+                label_visibility="collapsed",
             )
         with c_arr:
+            st.markdown('<div class="s5-field-lbl"></div>', unsafe_allow_html=True)
             st.markdown(
-                '<div style="text-align:center;color:#789c28;font-size:1.3rem;font-weight:600;padding-top:32px">→</div>',
+                '<div style="height:42px;display:flex;align-items:center;'
+                'justify-content:center;color:#789c28;font-size:1.3rem;font-weight:600">→</div>',
                 unsafe_allow_html=True,
             )
         with c_tgt:
+            st.markdown('<div class="s5-field-lbl">HUB ĐÍCH (TRẠM NHẬN XE) *</div>', unsafe_allow_html=True)
             tgt = st.selectbox(
-                "HUB ĐÍCH (TRẠM NHẬN XE) *", ids, format_func=hubs.get, key="sub05_tgt"
+                "HUB ĐÍCH (TRẠM NHẬN XE) *",
+                ids,
+                format_func=hubs.get,
+                key="sub05_tgt",
+                label_visibility="collapsed",
             )
 
         info = service.get_transferable_vehicles(src)
@@ -864,47 +985,62 @@ def _page_dispatch(data: dict, user: str) -> None:
         by_type = " · ".join(
             f"{n} {_type_label(t).lower()}" for t, n in info["by_type"].items()
         )
-        c_src.caption(
-            f"Khả dụng: **{info['max_transferable']} xe** ({by_type or 'không có xe'})"
-            + (f" · {info['held_for_reservations']} xe đang giữ cho đặt trước" if info["held_for_reservations"] else "")
+        held_note = (
+            f" · {info['held_for_reservations']} xe đang giữ cho đặt trước"
+            if info["held_for_reservations"]
+            else ""
         )
-        c_tgt.caption(
-            f"Chỗ đỗ trống: **{cap['free_spaces']} chỗ**"
-            + (f" · {cap['incoming']} xe đang trên đường tới" if cap["incoming"] else "")
+        incoming_note = (
+            f" · {cap['incoming']} xe đang trên đường tới"
+            if cap["incoming"]
+            else ""
+        )
+        c_src.markdown(
+            f'<div class="s5-field-sub">Khả dụng: <b>{info["max_transferable"]} xe</b> '
+            f'({esc(by_type or "không có xe")}){esc(held_note)}</div>',
+            unsafe_allow_html=True,
+        )
+        c_tgt.markdown(
+            f'<div class="s5-field-sub">Chỗ đỗ trống: <b>{cap["free_spaces"]} chỗ</b>'
+            f'{esc(incoming_note)}</div>',
+            unsafe_allow_html=True,
         )
 
         quantities: dict[str, int] = {}
         qty_keys = []
+        short_labels = {"ELECTRIC_BICYCLE": "Xe đạp", "ELECTRIC_MOTORCYCLE": "Xe máy"}
         with c_qty:
-            st.markdown(
-                '<div class="s5-m-t" style="margin-bottom:4px">SỐ LƯỢNG ĐIỀU CHUYỂN THEO LOẠI</div>',
-                unsafe_allow_html=True,
-            )
-            q_cols = st.columns(len(service.VEHICLE_TYPE_LABELS))
+            st.markdown('<div class="s5-field-lbl">SỐ LƯỢNG ĐIỀU CHUYỂN THEO LOẠI</div>', unsafe_allow_html=True)
+            q_cols = st.columns(len(service.VEHICLE_TYPE_LABELS), gap="small")
             for col, (vtype, label) in zip(q_cols, service.VEHICLE_TYPE_LABELS.items()):
                 max_v = min(info["by_type"].get(vtype, 0), info["max_transferable"])
                 key = f"sub05_qty_{src}_{vtype}"
                 qty_keys.append(key)
                 if st.session_state.get(key, 0) > max_v:
                     st.session_state[key] = max_v
+                short = short_labels.get(vtype, label)
                 quantities[vtype] = col.number_input(
-                    f"{label} (tối đa {max_v})",
+                    short,
                     min_value=0,
                     max_value=max_v,
                     step=1,
                     key=key,
                     disabled=max_v == 0,
+                    label_visibility="collapsed",
+                )
+                col.markdown(
+                    f'<div class="s5-field-sub"><b>{esc(short)}</b> · Tối đa {max_v}</div>',
+                    unsafe_allow_html=True,
                 )
 
         total = sum(quantities.values())
         with c_btn:
-            st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="s5-field-lbl"></div>', unsafe_allow_html=True)
             confirm = st.button(
                 "Xác nhận điều phối",
                 type="primary",
                 key="sub05_confirm",
                 disabled=total == 0 or src == tgt,
-                use_container_width=True,
             )
 
         if src == tgt:
@@ -973,8 +1109,7 @@ def _page_dispatch(data: dict, user: str) -> None:
                     )
                 if idx < len(orders) - 1:
                     st.markdown('<hr class="s5-sep">', unsafe_allow_html=True)
-
-
+                    
 # ---------------------------------------------------------------------------
 # Page: Sự cố
 # ---------------------------------------------------------------------------
@@ -1130,32 +1265,14 @@ def _page_incidents(user: str) -> None:
         )
 
     with st.container(border=True, key="s5_panel_incidents"):
-        # Giữ nguyên 3 cột gốc để nút "Báo cáo sự cố mới" không đổi kích thước/vị trí.
-        c_head, c_chk, c_btn = _cols(
-            [2.9, 1.5, 1.4],
-            vertical_alignment="center",
-        )
-
-        c_head.markdown(
-            '<div class="s5-h" style="margin:0">Danh sách sự cố</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Đặt checkbox trong container có key để CSS đẩy riêng checkbox về bên phải.
-        with c_chk:
-            with st.container(key="s5_incident_show_resolved"):
-                show_all = st.checkbox(
-                    "Hiện cả sự cố đã giải quyết",
-                    key="sub05_show_resolved",
-                )
-
-        # Giữ nguyên nút và use_container_width như bản ban đầu.
+        c_head, c_chk, c_btn = _cols([5.8, 1.75, 1.25], vertical_alignment="center")
+        c_head.markdown('<div class="s5-h" style="margin:0">Danh sách sự cố</div>', unsafe_allow_html=True)
+        show_all = c_chk.checkbox("Hiện cả sự cố đã giải quyết", key="sub05_show_resolved")
         c_btn.button(
             "+ Báo cáo sự cố mới",
             type="primary",
             key="sub05_new_incident",
             on_click=_toggle_form,
-            use_container_width=True,
         )
         if st.session_state.get(SHOW_FORM_KEY):
             _incident_form(user)
@@ -1168,13 +1285,17 @@ def _page_incidents(user: str) -> None:
             )
             return
 
-        widths = [2.0, 2.8, 1.6, 1.8, 3.0]
+        widths = [1.85, 2.75, 1.45, 1.75, 3.2]
         head = st.columns(widths)
-        for col, text in zip(
-            head,
-            ["THỜI GIAN & TÀI NGUYÊN", "MỨC ĐỘ & MÔ TẢ", "TRẠNG THÁI TÀI NGUYÊN", "ẢNH HƯỞNG NGHIỆP VỤ", "HÀNH ĐỘNG XỬ LÝ"],
-        ):
-            col.markdown(f'<div class="s5-thead">{text}</div>', unsafe_allow_html=True)
+        headers = [
+            ("THỜI GIAN & TÀI NGUYÊN", ""),
+            ("MỨC ĐỘ & MÔ TẢ", ""),
+            ("TRẠNG THÁI TÀI NGUYÊN", ""),
+            ("ẢNH HƯỞNG NGHIỆP VỤ", ""),
+            ("HÀNH ĐỘNG XỬ LÝ", " s5-thead-center"),
+        ]
+        for col, (text, extra_cls) in zip(head, headers):
+            col.markdown(f'<div class="s5-thead{extra_cls}">{text}</div>', unsafe_allow_html=True)
         st.markdown('<hr class="s5-thead-line">', unsafe_allow_html=True)
         for idx, inc in enumerate(views):
             row = _cols(widths, vertical_alignment="center")
@@ -1210,7 +1331,7 @@ def _page_incidents(user: str) -> None:
             )
             if not resolved:
                 action = inc["action"]
-                b1, b2 = row[4].columns([1.0, 1.35])
+                b1, b2 = row[4].columns([1.05, 1.35], gap="small")
                 b1.button(
                     action["label"],
                     key=f"sub05_act_{inc['incident_id']}",
@@ -1227,7 +1348,6 @@ def _page_incidents(user: str) -> None:
                 )
             if idx < len(views) - 1:
                 st.markdown('<hr class="s5-sep">', unsafe_allow_html=True)
-
 
 # ---------------------------------------------------------------------------
 # Entry point called by app.py

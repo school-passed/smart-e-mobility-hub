@@ -74,23 +74,91 @@ _S4_CSS = """
   font-size:.72rem;font-weight:600;background:#ffe4e6;color:#be123c;border:1px solid #fecdd3
 }
 
-/* Light widget overrides */
-.st-key-sub04_root [data-baseweb="select"] > div{
+/* Light widget overrides for other controls in SUB-04 */
+[data-testid="stMain"] .st-key-sub04_root [data-baseweb="select"] > div{
   background:#ffffff !important;border:1px solid #e5e7eb !important;border-radius:10px !important;color:#111827 !important
 }
-.st-key-sub04_root [data-baseweb="select"] > div > div{background:transparent !important}
-.st-key-sub04_root [data-baseweb="select"] span,
-.st-key-sub04_root [data-baseweb="select"] input{color:#111827 !important;font-weight:500 !important}
-.st-key-sub04_root [data-baseweb="select"] svg{fill:#6b7280 !important;color:#6b7280 !important}
-.st-key-sub04_root [data-testid="stNumberInputContainer"]{
+[data-testid="stMain"] .st-key-sub04_root [data-baseweb="select"] > div div{
+  background:transparent !important;background-color:transparent !important;border:none !important;box-shadow:none !important
+}
+[data-testid="stMain"] .st-key-sub04_root [data-baseweb="select"] span,
+[data-testid="stMain"] .st-key-sub04_root [data-baseweb="select"] input{color:#111827 !important;font-weight:500 !important}
+[data-testid="stMain"] .st-key-sub04_root [data-baseweb="select"] svg{fill:#6b7280 !important;color:#6b7280 !important}
+[data-testid="stMain"] .st-key-sub04_root [data-testid="stNumberInputContainer"]{
   background:#ffffff !important;border:1px solid #e5e7eb !important;border-radius:10px !important
 }
-.st-key-sub04_root [data-testid="stNumberInputContainer"] input{background:#ffffff !important;color:#111827 !important}
-.st-key-sub04_root [data-testid="stNumberInputStepDown"],
-.st-key-sub04_root [data-testid="stNumberInputStepUp"]{
+[data-testid="stMain"] .st-key-sub04_root [data-testid="stNumberInputContainer"] input{background:#ffffff !important;color:#111827 !important}
+[data-testid="stMain"] .st-key-sub04_root [data-testid="stNumberInputStepDown"],
+[data-testid="stMain"] .st-key-sub04_root [data-testid="stNumberInputStepUp"]{
   background:#f8fafc !important;color:#374151 !important;border-left:1px solid #e5e7eb !important
 }
-.st-key-sub04_root .s4-hub-label{text-align:right;font-size:.84rem;color:#6b7280;font-weight:500;padding-top:2px}
+
+/* Unified pill Hub selector ("Trạm Hub: Metro Station v") */
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker{
+  box-sizing:border-box !important;width:max-content !important;max-width:100% !important;
+  margin-left:auto !important;background:#ffffff !important;
+  border:1px solid #e5e7eb !important;border-radius:999px !important;
+  padding:2px 16px !important;height:38px !important;min-height:38px !important;
+  display:inline-flex !important;align-items:center !important;cursor:pointer !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker [data-testid="stVerticalBlock"],
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker [data-testid="stElementContainer"]{
+  gap:0 !important;margin:0 !important;padding:0 !important;width:auto !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker [data-testid="stHorizontalBlock"]{
+  width:max-content !important;display:inline-flex !important;align-items:center !important;
+  gap:6px !important;flex-wrap:nowrap !important;margin:0 !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker [data-testid="stColumn"]{
+  width:auto !important;flex:0 0 auto !important;min-width:0 !important;padding:0 !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-s4_hub_picker .s4-hub-label{
+  font-size:13.5px !important;color:#6b7280 !important;font-weight:400 !important;
+  white-space:nowrap !important;line-height:1 !important;margin:0 !important;padding:0 !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub,
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub *{
+  background:transparent !important;background-color:transparent !important;
+  border:none !important;border-width:0 !important;border-color:transparent !important;
+  box-shadow:none !important;outline:none !important;border-radius:0 !important;
+  font-weight:600 !important;color:#1f2937 !important;font-size:13.5px !important;
+  line-height:1.2 !important;white-space:nowrap !important;
+  caret-color:transparent !important;user-select:none !important;cursor:pointer !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub,
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-testid="stSelectbox"],
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"],
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] div{
+  width:auto !important;min-width:0 !important;max-width:none !important;
+  flex:0 0 auto !important;padding:0 !important;margin:0 !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] > div{
+  height:32px !important;min-height:32px !important;
+  display:inline-flex !important;align-items:center !important;gap:10px !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] div:has(> input),
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] input{
+  position:absolute !important;width:0 !important;height:0 !important;
+  min-width:0 !important;max-width:0 !important;overflow:hidden !important;
+  padding:0 !important;margin:0 !important;opacity:0 !important;pointer-events:none !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] > div > div:last-child{
+  display:inline-flex !important;align-items:center !important;justify-content:center !important;
+  width:14px !important;height:14px !important;flex:0 0 14px !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] svg{
+  display:none !important
+}
+[data-testid="stMain"] .st-key-sub04_root .st-key-sub04_selected_hub [data-baseweb="select"] > div > div:last-child::after{
+  content:"";width:13px;height:13px;display:block;background-color:#4b5563;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpolyline%20points%3D'6%209%2012%2015%2018%209'%2F%3E%3C%2Fsvg%3E");
+  mask-image:url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpolyline%20points%3D'6%209%2012%2015%2018%209'%2F%3E%3C%2Fsvg%3E");
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;
+  -webkit-mask-size:contain;mask-size:contain
+}
+[data-baseweb="popover"] [data-baseweb="menu"]{
+  min-width:210px !important;border-radius:12px !important
+}
 
 /* Charging point cards */
 .st-key-sub04_root .s4-points{
@@ -153,12 +221,16 @@ _S4_CSS = """
 }
 .st-key-sub04_root .st-key-sub04_go_sched button *{color:#4d7c0f !important;font-size:.8rem !important;font-weight:600 !important}
 .st-key-sub04_root [class*="st-key-sub04_act_"] button,
+.st-key-sub04_root [class*="st-key-sub04_view_"] button,
+.st-key-sub04_root [class*="st-key-sub04_skip_"] button,
 .st-key-sub04_root [class*="st-key-sub04_priority_"] button,
 .st-key-sub04_root [class*="st-key-sub04_propose_"] button{
   background:#fff !important;border:1px solid #e5e7eb !important;border-radius:10px !important;
   padding:3px 12px !important;min-height:30px !important;height:30px !important
 }
 .st-key-sub04_root [class*="st-key-sub04_act_"] button *,
+.st-key-sub04_root [class*="st-key-sub04_view_"] button *,
+.st-key-sub04_root [class*="st-key-sub04_skip_"] button *,
 .st-key-sub04_root [class*="st-key-sub04_priority_"] button *,
 .st-key-sub04_root [class*="st-key-sub04_propose_"] button *{color:#111827 !important;font-size:.78rem !important;font-weight:600 !important}
 .st-key-sub04_root [class*="st-key-sub04_confirm_"] button{
@@ -171,10 +243,12 @@ _S4_CSS = """
   padding:3px 14px !important;min-height:30px !important;height:30px !important
 }
 .st-key-sub04_root [class*="st-key-sub04_report_"] button *{color:#fff !important;font-size:.78rem !important;font-weight:600 !important}
+.st-key-sub04_root [class*="st-key-sub04_stop_"] button,
 .st-key-sub04_root [class*="st-key-sub04_cancel_"] button{
   background:#fff !important;border:1px solid #fecdd3 !important;border-radius:10px !important;
   padding:3px 12px !important;min-height:30px !important;height:30px !important
 }
+.st-key-sub04_root [class*="st-key-sub04_stop_"] button *,
 .st-key-sub04_root [class*="st-key-sub04_cancel_"] button *{color:#be123c !important;font-size:.78rem !important;font-weight:600 !important}
 
 @media(max-width:900px){
@@ -255,23 +329,23 @@ def _show_kpis(items, columns=4):
     html.append("</div>")
     st.markdown("".join(html), unsafe_allow_html=True)
 
-
 def _header(title, hubs):
-    left, right = _cols([5.5, 3.0], vertical_alignment="center")
+    left, right = _cols([5.5, 3.5], vertical_alignment="center")
     with left:
         st.markdown(f'<div class="s4-page-title">{escape(title)}</div>', unsafe_allow_html=True)
     hub_ids = [hub["hub_id"] for hub in hubs]
     hub_names = {hub["hub_id"]: _hub_label(hub) for hub in hubs}
     with right:
-        c_lbl, c_sel = _cols([1.1, 2.2], vertical_alignment="center")
-        c_lbl.markdown('<div class="s4-hub-label">Trạm Hub:</div>', unsafe_allow_html=True)
-        hub_id = c_sel.selectbox(
-            "Trạm Hub",
-            hub_ids,
-            format_func=lambda value: hub_names.get(value, value),
-            key="sub04_selected_hub",
-            label_visibility="collapsed",
-        )
+        with st.container(key="s4_hub_picker"):
+            c_lbl, c_sel = _cols([1.0, 1.9], vertical_alignment="center")
+            c_lbl.markdown('<div class="s4-hub-label">Trạm Hub:</div>', unsafe_allow_html=True)
+            hub_id = c_sel.selectbox(
+                "Trạm Hub",
+                hub_ids,
+                format_func=lambda value: hub_names.get(value, value),
+                key="sub04_selected_hub",
+                label_visibility="collapsed",
+            )
     return hub_id, hub_names
 
 
@@ -279,6 +353,24 @@ def _nav_to(label, **extra):
     st.session_state["sub05_nav_request"] = label
     for key, value in extra.items():
         st.session_state[key] = value
+
+def _emergency_stop_point(state, point_id, schedule_id=None, vehicle_id=None):
+    for pt in state.get("charging_points", []):
+        if pt.get("charging_point_id") == point_id:
+            pt["status"] = "AVAILABLE"
+            break
+    if schedule_id:
+        for sc in state.get("charging_schedules", []):
+            if sc.get("schedule_id") == schedule_id:
+                sc["status"] = "CANCELLED"
+                break
+    if vehicle_id:
+        for veh in state.get("vehicles", []):
+            if veh.get("vehicle_id") == vehicle_id and veh.get("status") == "CHARGING":
+                veh["status"] = "AVAILABLE"
+                break
+    st.session_state["sub04_notice"] = f"Đã ngắt an toàn phiên sạc tại {_point_label(point_id)}."
+    st.rerun()
 
 
 def _resources(state, hub_id):
@@ -453,11 +545,21 @@ def _resources(state, hub_id):
                             unsafe_allow_html=True,
                         )
                         r[4].markdown(f'<div class="s4-cell">{_pill(pstatus, "blue" if pstatus == "IN_USE" else "amber")}</div>', unsafe_allow_html=True)
-                        r[5].markdown('<div class="s4-cell"></div>', unsafe_allow_html=True)
+                        if pstatus == "IN_USE":
+                            if r[5].button("Ngắt an toàn", key=f"sub04_stop_pt_{pid}"):
+                                _emergency_stop_point(state, pid, vehicle_id=veh.get("vehicle_id") if veh else None)
+                        else:
+                            r[5].button(
+                                "Xem lịch hẹn",
+                                key=f"sub04_view_pt_{pid}",
+                                on_click=_nav_to,
+                                args=("Lập lịch sạc",),
+                            )
                 else:
                     sc = item["schedule"]
                     req = item["request"]
                     sid = sc["schedule_id"]
+                    pid = sc.get("charging_point_id")
                     status = sc.get("status", "-")
                     _, tone = SCHEDULE_STATUS.get(status, (status, "gray"))
                     vid = req.get("vehicle_id")
@@ -468,19 +570,26 @@ def _resources(state, hub_id):
                     with st.container(key=f"s4_row_ok_{sid}"):
                         r = _cols(widths, vertical_alignment="center")
                         r[0].markdown(f'<div class="s4-cell-muted">{escape(sc_time)}</div>', unsafe_allow_html=True)
-                        r[1].markdown(f'<div class="s4-cell s4-strong">{escape(_point_label(sc.get("charging_point_id")))}</div>', unsafe_allow_html=True)
+                        r[1].markdown(f'<div class="s4-cell s4-strong">{escape(_point_label(pid))}</div>', unsafe_allow_html=True)
                         r[2].markdown(f'<div class="s4-cell s4-strong">{escape(vehicle_text)}</div>', unsafe_allow_html=True)
                         r[3].markdown(
                             f'<div class="s4-cell s4-strong">{f"{bat:g}%" if bat is not None else ""}</div>',
                             unsafe_allow_html=True,
                         )
                         r[4].markdown(f'<div class="s4-cell">{_pill(status, tone)}</div>', unsafe_allow_html=True)
-                        if status == "PROPOSED":
+                        if status == "IN_USE":
+                            if r[5].button("Ngắt an toàn", key=f"sub04_stop_sc_{sid}"):
+                                _emergency_stop_point(state, pid, schedule_id=sid, vehicle_id=vid)
+                        elif status == "PROPOSED":
                             if r[5].button("Xác nhận", key=f"sub04_confirm_res_{sid}"):
                                 _run_action(service.confirm_charging_schedule, state, sid)
                         elif status == "CONFIRMED":
-                            if r[5].button("Hủy lịch", key=f"sub04_cancel_{sid}"):
-                                _run_action(service.cancel_charging_schedule, state, sc["request_id"])
+                            r[5].button(
+                                "Xem lịch hẹn",
+                                key=f"sub04_view_sc_{sid}",
+                                on_click=_nav_to,
+                                args=("Lập lịch sạc",),
+                            )
                         else:
                             r[5].markdown('<div class="s4-cell"></div>', unsafe_allow_html=True)
 
@@ -504,13 +613,16 @@ def _resources(state, hub_id):
 
 def _priority(state, hub_id):
     ranked, incomplete = service.prioritize_charging_requests(state, hub_id)
+    skipped = st.session_state.setdefault("sub04_skipped_requests", set())
+    incomplete_visible = [item for item in incomplete if item.get("request_id") not in skipped]
+
     high = sum(float(item.get("current_battery", 100)) < 20 for item in ranked)
     normal = len(ranked) - high
     _show_kpis([
-        ("Tổng yêu cầu chờ", len(ranked) + len(incomplete), "yêu cầu", "#6b7280", "#111827"),
+        ("Tổng yêu cầu chờ", len(ranked) + len(incomplete_visible), "yêu cầu", "#6b7280", "#111827"),
         ("Ưu tiên cao", high, "Pin < 20%", "#e11d48", "#e11d48"),
         ("Ưu tiên bình thường", normal, "Pin ≥ 20%", "#2563eb", "#2563eb"),
-        ("Chờ xác minh", len(incomplete), "Thiếu / Trễ dữ liệu", "#f59e0b", "#d97706"),
+        ("Chờ xác minh", len(incomplete_visible), "Thiếu / Trễ dữ liệu", "#f59e0b", "#d97706"),
     ])
 
     with st.container(border=True, key="s4_panel_priority"):
@@ -524,7 +636,7 @@ def _priority(state, hub_id):
             use_container_width=True,
         )
 
-        if not ranked and not incomplete:
+        if not ranked and not incomplete_visible:
             st.markdown('<div class="s4-empty">Chưa có yêu cầu sạc nào đang chờ tại Hub này.</div>', unsafe_allow_html=True)
             return
 
@@ -568,10 +680,11 @@ def _priority(state, hub_id):
             if rank < len(ranked):
                 st.markdown('<hr class="s4-sep">', unsafe_allow_html=True)
 
-        for item in incomplete:
-            vid = item.get("vehicle_id") or item.get("request_id", "-")
+        for item in incomplete_visible:
+            rid = item["request_id"]
+            vid = item.get("vehicle_id") or rid
             bat = item.get("current_battery")
-            with st.container(key=f"s4_row_warn_{item['request_id']}"):
+            with st.container(key=f"s4_row_warn_{rid}"):
                 row = _cols(widths, vertical_alignment="center")
                 row[0].markdown('<span class="s4-rank warn">--</span>', unsafe_allow_html=True)
                 row[1].markdown(f'<div class="s4-cell s4-strong">{escape(str(vid))}</div>', unsafe_allow_html=True)
@@ -585,17 +698,9 @@ def _priority(state, hub_id):
                     f'<div class="s4-cell" style="color:#b45309;font-weight:600">{escape(str(item.get("reason", "Thiếu dữ liệu")))}</div>',
                     unsafe_allow_html=True,
                 )
-                row[6].markdown('<div class="s4-cell"></div>', unsafe_allow_html=True)
-
-        shared = {item["request_id"]: item for item in incomplete if item.get("vehicle_id") and not item.get("departure_time")}
-        if shared:
-            st.markdown("---")
-            c1, c2, c3 = _cols([2, 2, 1], vertical_alignment="bottom")
-            request_id = c1.selectbox("Xe dùng chung cần bổ sung giờ sử dụng", list(shared), key="sub04_missing_time_id")
-            departure = c2.text_input("Giờ cần xe (HH:MM hoặc YYYY-MM-DD HH:MM)", key=f"sub04_departure_{request_id}")
-            if c3.button("Lưu giờ cần xe", type="primary", key="sub04_save_departure", use_container_width=True):
-                _run_action(service.set_shared_departure, state, request_id, departure)
-
+                if row[6].button("Bỏ qua", key=f"sub04_skip_{rid}"):
+                    skipped.add(rid)
+                    st.rerun()
 
 def _scheduling(state, hub_id):
     data = service.get_charging_resources(state, hub_id)
@@ -603,6 +708,7 @@ def _scheduling(state, hub_id):
     schedules = data["schedules"]
     schedules_by_request = {schedule.get("request_id"): schedule for schedule in schedules}
     points = data["points"]
+
     confirmed = sum(schedule.get("status") in service.ACTIVE for schedule in schedules)
     rejected = 0
     candidate_rows = []
@@ -629,14 +735,37 @@ def _scheduling(state, hub_id):
     ])
 
     with st.container(border=True, key="s4_panel_schedule"):
-        st.markdown('<div class="s4-sec-title" style="margin-bottom:8px">Chi tiết đề xuất phân bổ theo thứ tự ưu tiên</div>', unsafe_allow_html=True)
+        top_l, top_r = _cols([4.2, 1.8], vertical_alignment="center")
+        top_l.markdown(
+            '<div class="s4-sec-title" style="margin-bottom:0">Chi tiết đề xuất phân bổ theo thứ tự ưu tiên</div>',
+            unsafe_allow_html=True,
+        )
+        proposable_ids = [
+            req["request_id"]
+            for req, sc, prev, rsn in candidate_rows
+            if not rsn and not sc and prev
+        ]
+        if proposable_ids and top_r.button(
+            "Lập tất cả đề xuất",
+            type="primary",
+            key="sub04_propose_all",
+            use_container_width=True,
+        ):
+            for rid in proposable_ids:
+                try:
+                    service.propose_charging_schedule(state, rid)
+                except ValueError:
+                    pass
+            st.session_state["sub04_notice"] = f"Đã tạo đề xuất lịch cho {len(proposable_ids)} yêu cầu."
+            st.rerun()
+
         if not candidate_rows and not incomplete:
             st.markdown('<div class="s4-empty">Chưa có yêu cầu chờ xử lý tại Hub này.</div>', unsafe_allow_html=True)
         else:
-            widths = [0.5, 1.35, 1.1, 1.45, 1.1, 1.85]
+            widths = [0.5, 1.35, 1.1, 1.45, 1.1, 2.0]
             with st.container(key="s4_row_head_sched"):
                 head = st.columns(widths)
-                for col, text in zip(head, ["HẠNG", "PHƯƠNG TIỆN", "TRỤ SẠC ĐỀ XUẤT", "KHUNG THỜI GIAN", "TRẠNG THÁI PHÂN BỔ", "GHI CHÚ"]):
+                for col, text in zip(head, ["HẠNG", "PHƯƠNG TIỆN", "TRỤ SẠC ĐỀ XUẤT", "KHUNG THỜI GIAN", "TRẠNG THÁI PHÂN BỔ", "THAO TÁC / GHI CHÚ"]):
                     col.markdown(f'<div class="s4-thead">{text}</div>', unsafe_allow_html=True)
             st.markdown('<hr class="s4-thead-line">', unsafe_allow_html=True)
 
@@ -672,11 +801,15 @@ def _scheduling(state, hub_id):
                         r[5].markdown(f'<div class="s4-cell" style="color:#be123c;font-weight:600">{escape(reason)}</div>', unsafe_allow_html=True)
                     elif schedule and schedule.get("status") == "PROPOSED":
                         r[4].markdown(f'<div class="s4-cell">{_pill("Đề xuất", "amber")}</div>', unsafe_allow_html=True)
-                        if r[5].button("Xác nhận", key=f"sub04_confirm_{schedule['schedule_id']}"):
+                        b_ok, b_no = r[5].columns(2, gap="small")
+                        if b_ok.button("Xác nhận", key=f"sub04_confirm_{schedule['schedule_id']}", use_container_width=True):
                             _run_action(service.confirm_charging_schedule, state, schedule["schedule_id"])
+                        if b_no.button("Hủy", key=f"sub04_cancel_prop_{schedule['schedule_id']}", use_container_width=True):
+                            _run_action(service.cancel_charging_schedule, state, request["request_id"])
                     elif schedule and schedule.get("status") in service.ACTIVE:
                         r[4].markdown(f'<div class="s4-cell">{_pill("Thành công", "green")}</div>', unsafe_allow_html=True)
-                        r[5].markdown('<div class="s4-cell"></div>', unsafe_allow_html=True)
+                        if r[5].button("Hủy lịch", key=f"sub04_cancel_act_{schedule['schedule_id']}"):
+                            _run_action(service.cancel_charging_schedule, state, request["request_id"])
                     else:
                         r[4].markdown(f'<div class="s4-cell">{_pill("Chờ lập lịch", "blue")}</div>', unsafe_allow_html=True)
                         if preview and r[5].button("Tạo đề xuất", key=f"sub04_propose_{request['request_id']}"):
@@ -707,8 +840,7 @@ def _scheduling(state, hub_id):
             )
             if st.button("Cập nhật tiến độ", type="primary", key="sub04_update_progress"):
                 _run_action(service.update_charging_progress, state, selected_id, progress)
-
-
+                
 def _run_action(function, state, *args):
     try:
         result = function(state, *args)
